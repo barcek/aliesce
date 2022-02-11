@@ -2,6 +2,14 @@ use std::env;
 use std::fs;
 use std::process;
 
+struct Output {
+  code: String,
+  path: String,
+  prog: String,
+  args: Vec<String>,
+  i: usize
+}
+
 fn main() {
 
   /* configure */
@@ -26,7 +34,7 @@ fn main() {
     .for_each(apply)
 }
 
-fn parse<'a>(script: &'a str, dir: &str, src: &str, i: usize) -> Option<(String, String, Vec<String>, String, usize)> {
+fn parse<'a>(script: &'a str, dir: &str, src: &str, i: usize) -> Option<Output> {
 
   let mut lines = script.lines();
 
@@ -52,11 +60,11 @@ fn parse<'a>(script: &'a str, dir: &str, src: &str, i: usize) -> Option<(String,
 
   /* assemble return value */
   let code = lines.skip(1).collect::<Vec<&str>>().join("\n");
+  let path = format!("{}/{}.{}", dir, basename, ext);
   let prog = if data.len() != 1 { data.iter().nth(1).unwrap().to_owned() } else { "?".to_string() };
   let args = data.iter().skip(2).map(|arg| arg.to_owned()).collect::<Vec<String>>();
-  let path = format!("{}/{}.{}", dir, basename, ext);
 
-  return Some((code, prog, args, path, i));
+  return Some(Output { code, path, prog, args, i });
 }
 
 fn save(path: &String, code: String) {
@@ -83,11 +91,11 @@ fn exec(prog: String, args: Vec<String>, path: String, i: usize) {
     .wait_with_output().expect(&format!("await output from '{}'", prog));
 }
 
-fn apply(strs: Option<(String, String, Vec<String>, String, usize)>) {
+fn apply(output: Option<Output>) {
 
-  /* destructure if tuple */
-  let (code, prog, args, path, i) = match strs {
-    Some(t) => t,
+  /* destructure if some */
+  let Output { code, path, prog, args, i } = match output {
+    Some(s) => s,
     None    => { return }
   };
 

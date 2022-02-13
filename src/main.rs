@@ -2,6 +2,7 @@ use std::env;
 use std::fs;
 use std::process;
 
+#[derive(Debug, PartialEq)]
 struct Output {
   code: String,
   path: String,
@@ -102,4 +103,74 @@ fn apply(output: Option<Output>) {
   /* perform final tasks */
   save(&path, code);
   exec(prog, args, path, i);
+}
+
+#[cfg(test)]
+mod test {
+
+  use super::{ Output, parse };
+
+  fn get_defaults_parse() -> (&'static str, &'static str, usize, String, String) {
+    ("scripts", "src.txt", 1, String::from("//code"), String::from("scripts/src.ext"))
+  }
+
+  #[test]
+  fn parse_returns_for_tag_data_full_some_output() {
+
+    let (dir, src, i, code, path) = get_defaults_parse();
+    let script = " ext program --flag value\n\n//code";
+
+    let expected = Option::Some(Output {
+      code, path,
+      prog: String::from("program"),
+      args: Vec::from([String::from("--flag"), String::from("value")]),
+      i
+    });
+
+    let obtained = parse(script, dir, src, i);
+
+    assert_eq!(expected, obtained);
+  }
+
+  #[test]
+  fn parse_returns_for_tag_data_minus_cmd_some_output_indicating() {
+
+    let (dir, src, i, code, path) = get_defaults_parse();
+    let script = " ext\n\n//code";
+
+    let expected = Option::Some(Output {
+      code, path,
+      prog: String::from("?"),
+      args: Vec::from([]),
+      i
+    });
+
+    let obtained = parse(script, dir, src, i);
+
+    assert_eq!(expected, obtained);
+  }
+
+  #[test]
+  fn parse_returns_for_tag_data_full_with_bypass_none() {
+
+    let (dir, src, i, _, _) = get_defaults_parse();
+    let script = " ! ext program --flag value\n\n//code";
+
+    let expected = Option::None;
+    let obtained = parse(script, dir, src, i);
+
+    assert_eq!(expected, obtained);
+  }
+
+  #[test]
+  fn parse_returns_for_tag_data_absent_none() {
+
+    let (dir, src, i, _, _) = get_defaults_parse();
+    let script = "\n\n//code";
+
+    let expected = Option::None;
+    let obtained = parse(script, dir, src, i);
+
+    assert_eq!(expected, obtained);
+  }
 }

@@ -12,7 +12,7 @@ Create a file with any name, and any extension or none. Use the current default 
 
 Precede each script in the file with a tag line starting by default `###`. Include in the tag line the following elements:
 
-- the file extension for that language
+- the file extension for that language, or if preferred the full output filename including the extension
 - the command to run the file, if any
 - any arguments to pass to that command
 
@@ -24,7 +24,13 @@ For example, for Elixir:
 ### exs elixir -r setup
 ```
 
-This tells aliesce to save the subsequent script in a file with the `exs` extension then run that with the `elixir` command, applying one option, to require a file named 'setup'.
+This tells aliesce to save the subsequent script in a file with the `exs` extension then run that with the `elixir` command, applying one option, to require a file named 'setup'. The basename of the output file will be the basename of the source file, i.e. 'src' by default.
+
+For an output file named 'script.exs', the following would be used:
+
+```
+### script.exs elixir -r setup
+```
 
 If aliesce is compiled and ready to go (see [Getting started](#getting-started) below), run the `aliesce` command, adding the source file name if not the default.
 
@@ -38,10 +44,10 @@ The scripts are saved by default to a folder in the current directory named `scr
 
 ### Avoiding stages
 
-To avoid a script being saved and run, simply include the `!` character as a tag line element, before the extension:
+To avoid a script being saved and run, simply include the `!` character as a tag line element, before the extension or full output filename:
 
 ```
-### ! exs elixir -r setup
+### ! script.exs elixir -r setup
 ```
 
 To save the script but avoid the run stage, include the `!` character as an element after the extension but before the command to run the code:
@@ -57,3 +63,17 @@ The `dir`, `src` and `tag` defaults are defined close to the top of the source f
 With Rust and Cargo installed, at the root of the aliesce directory run `cargo build --release` to compile. The binary is created in the 'target/release' directory.
 
 The binary can be run with the command `./aliesce` while in the same directory, and from elsewhere using the pattern `path/to/aliesce`. It can be run from any directory with `aliesce` by placing it in the '/bin' or '/usr/bin' directory.
+
+## Making changes
+
+Running the tests after making changes and adding tests to cover new behaviour is recommended.
+
+### Tests
+
+The tests can be run with the following command:
+
+```shell
+cargo test
+```
+
+The tests themselves are in the test module at the base of the file.

@@ -49,15 +49,15 @@ fn parse<'a>(script: &'a str, dir: &str, src: &str, i: usize) -> Option<Output> 
     println!("No tag data found for script no. {}", i + 1);
     return None;
   }
-
   if data.iter().nth(0).unwrap() == "!" {
     println!("Bypassing script no. {} (! applied)", i + 1);
     return None;
   }
 
   /* get output path parts */
-  let basename = src.split(".").nth(0).unwrap();
-  let ext = data.iter().nth(0).unwrap();
+  let parts = data.iter().nth(0).unwrap().split(".").collect::<Vec<&str>>();
+  let basename = if parts.len() == 2 { parts.iter().nth(0).unwrap() } else { src.split(".").nth(0).unwrap() };
+  let ext = parts.iter().last().unwrap();
 
   /* assemble return value */
   let code = lines.skip(1).collect::<Vec<&str>>().join("\n");
@@ -76,15 +76,9 @@ fn save(path: &String, code: String) {
 
 fn exec(prog: String, args: Vec<String>, path: String, i: usize) {
 
-  if prog == "!" {
-    println!("Not running file no. {} (! applied)", i + 1);
-    return
-  }
-
-  if prog == "?" {
-    println!("Not running file no. {} (no values)", i + 1);
-    return
-  }
+  /* handle run precluded */
+  if prog == "!" { return println!("Not running file no. {} (! applied)", i + 1); }
+  if prog == "?" { return println!("Not running file no. {} (no values)", i + 1); }
 
   /* run script from file */
   process::Command::new(&prog).args(args).arg(path)
@@ -122,6 +116,25 @@ mod test {
 
     let expected = Option::Some(Output {
       code, path,
+      prog: String::from("program"),
+      args: Vec::from([String::from("--flag"), String::from("value")]),
+      i
+    });
+
+    let obtained = parse(script, dir, src, i);
+
+    assert_eq!(expected, obtained);
+  }
+
+  #[test]
+  fn parse_returns_for_tag_data_full_plus_output_basename_some_output() {
+
+    let (dir, src, i, code, _) = get_defaults_parse();
+    let script = " script.ext program --flag value\n\n//code";
+
+    let expected = Option::Some(Output {
+      code,
+      path: String::from("scripts/script.ext"),
       prog: String::from("program"),
       args: Vec::from([String::from("--flag"), String::from("value")]),
       i

@@ -12,7 +12,7 @@ Create a file with any name, and any extension or none. Use the current default 
 
 Precede each script in the file with a tag line starting by default `###`. Include in the tag line the following elements:
 
-- the file extension for that language, or if preferred the full output filename including the extension
+- the file extension for that language, or the full output filename including extension, or the full output path including directory and extension
 - the command to run the file, if any
 - any arguments to pass to that command
 
@@ -24,12 +24,20 @@ For example, for Elixir:
 ### exs elixir -r setup
 ```
 
-This tells aliesce to save the subsequent script in a file with the `exs` extension then run that with the `elixir` command, applying one option, to require a file named 'setup'. The basename of the output file will be the basename of the source file, i.e. 'src' by default.
+This tells aliesce to save the subsequent script in a file with the `exs` extension then run that with the `elixir` command, applying one option, to require a file named 'setup'.
+
+The basename of the output file will be the basename of the source file, i.e. 'src' by default. The file is saved by default to a folder in the current directory named `scripts`, which is created if not present.
 
 For an output file named 'script.exs', the following would be used:
 
 ```
 ### script.exs elixir -r setup
+```
+
+For an output directory named 'output' holding 'script.exs':
+
+```
+### output/script.exs elixir -r setup
 ```
 
 If aliesce is compiled and ready to go (see [Getting started](#getting-started) below), run the `aliesce` command, adding the source file name if not the default.
@@ -40,20 +48,20 @@ For example, for a source file named only 'src':
 aliesce src
 ```
 
-The scripts are saved by default to a folder in the current directory named `scripts`, which is created if not present. The script files are run in order of appearance in the source file.
+The script files are saved and run in order of appearance in the source file.
 
 ### Avoiding stages
 
-To avoid a script being saved and run, simply include the `!` character as a tag line element, before the extension or full output filename:
+To avoid a script being saved and run, simply include the `!` character as a tag line element, before the extension or full output filename or path:
 
 ```
 ### ! script.exs elixir -r setup
 ```
 
-To save the script but avoid the run stage, include the `!` character as an element after the extension but before the command to run the code:
+To save the script but avoid the run stage, include the `!` character as an element after the extension or full output filename or path but before the command to run the code:
 
 ```
-### exs ! elixir -r setup
+### script.exs ! elixir -r setup
 ```
 
 ## Getting started
@@ -77,3 +85,19 @@ cargo test
 ```
 
 The tests themselves are in the test module at the base of the file.
+
+## Development plan
+
+The following are the expected next steps in the development of the code base. The general medium-term aim is a convenient parallel scripting tool. Pull requests are welcome for these and other potential improvements.
+
+- allow for an alternative output directory with the default basename
+- allow for arguments to scripts run from aliesce
+- provide tag line options for:
+  - multiple save paths
+  - auxiliary commands
+- provide CLI options for:
+  - output verbosity
+  - importing scripts
+- refactor as more idiomatic
+- improve error handling
+- add fuller testing

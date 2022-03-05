@@ -3,9 +3,16 @@ use std::fs;
 use std::process;
 
 #[derive(Debug, PartialEq)]
+struct Path {
+  dir: String,
+  basename: String,
+  ext: String
+}
+
+#[derive(Debug, PartialEq)]
 struct Output {
   code: String,
-  path: String,
+  path: Path,
   prog: String,
   args: Vec<String>,
   i: usize
@@ -22,9 +29,6 @@ fn main() {
   let tag = "###";
 
   /* implement */
-
-  /* add directory if none */
-  fs::create_dir_all(dir).expect(&format!("create directory '{}'", dir));
 
   /* extract, save and run */
   fs::read_to_string(src).expect(&format!("read source file '{}'", src))
@@ -55,17 +59,26 @@ fn parse<'a>(script: &'a str, dir: &str, src: &str, i: usize) -> Option<Output> 
   }
 
   /* get output path parts */
-  let parts = data.iter().nth(0).unwrap().split(".").collect::<Vec<&str>>();
-  let basename = if parts.len() == 2 { parts.iter().nth(0).unwrap() } else { src.split(".").nth(0).unwrap() };
-  let ext = parts.iter().last().unwrap();
+  let mut parts_path = data.iter().nth(0).unwrap().split("/").collect::<Vec<&str>>();
+  let parts_filename = parts_path.split_off(parts_path.len() - 1).last().unwrap().split(".").collect::<Vec<&str>>();
+
+  let dir = if parts_path.len() > 0 { parts_path.join("/") } else { dir.to_string() };
+  let basename = if parts_filename.len() == 2 { parts_filename.iter().nth(0).unwrap() } else { src.split(".").nth(0).unwrap() }.to_string();
+  let ext = parts_filename.iter().last().unwrap().to_string();
 
   /* assemble return value */
   let code = lines.skip(1).collect::<Vec<&str>>().join("\n");
-  let path = format!("{}/{}.{}", dir, basename, ext);
+  let path = Path{ dir, basename, ext };
   let prog = if data.len() != 1 { data.iter().nth(1).unwrap().to_owned() } else { "?".to_string() };
   let args = data.iter().skip(2).map(|arg| arg.to_owned()).collect::<Vec<String>>();
 
   return Some(Output { code, path, prog, args, i });
+}
+
+fn make(dir: String) {
+
+  /* add directory if none */
+  fs::create_dir_all(&dir).expect(&format!("create directory '{}'", dir));
 }
 
 fn save(path: &String, code: String) {
@@ -94,7 +107,12 @@ fn apply(output: Option<Output>) {
     None    => { return }
   };
 
+  /* destructure and join */
+  let Path { dir, basename, ext } = path;
+  let path = format!("{}/{}.{}", dir, basename, ext);
+
   /* perform final tasks */
+  make(dir);
   save(&path, code);
   exec(prog, args, path, i);
 }
@@ -102,10 +120,14 @@ fn apply(output: Option<Output>) {
 #[cfg(test)]
 mod test {
 
-  use super::{ Output, parse };
+  use super::{ Path, Output, parse };
 
-  fn get_defaults_parse() -> (&'static str, &'static str, usize, String, String) {
-    ("scripts", "src.txt", 1, String::from("//code"), String::from("scripts/src.ext"))
+  fn get_defaults_parse() -> (&'static str, &'static str, usize, String, Path) {
+    let dir = String::from("scripts");
+    let basename = String::from("src");
+    let ext = String::from("ext");
+    let path = Path { dir, basename, ext };
+    ("scripts", "src.txt", 1, String::from("//code"), path)
   }
 
   #[test]
@@ -129,18 +151,47 @@ mod test {
   #[test]
   fn parse_returns_for_tag_data_full_plus_output_basename_some_output() {
 
-    let (dir, src, i, code, _) = get_defaults_parse();
+    let (dir_default, src, i, code, _) = get_defaults_parse();
     let script = " script.ext program --flag value\n\n//code";
+
+    let dir = String::from("scripts");
+    let basename = String::from("script");
+    let ext = String::from("ext");
+    let path = Path { dir, basename, ext };
 
     let expected = Option::Some(Output {
       code,
-      path: String::from("scripts/script.ext"),
+      path: path,
       prog: String::from("program"),
       args: Vec::from([String::from("--flag"), String::from("value")]),
       i
     });
 
-    let obtained = parse(script, dir, src, i);
+    let obtained = parse(script, dir_default, src, i);
+
+    assert_eq!(expected, obtained);
+  }
+
+  #[test]
+  fn parse_returns_for_tag_data_full_plus_output_dir_some_output() {
+
+    let (dir_default, src, i, code, _) = get_defaults_parse();
+    let script = " dir/script.ext program --flag value\n\n//code";
+
+    let dir = String::from("dir");
+    let basename = String::from("script");
+    let ext = String::from("ext");
+    let path = Path { dir, basename, ext };
+
+    let expected = Option::Some(Output {
+      code,
+      path: path,
+      prog: String::from("program"),
+      args: Vec::from([String::from("--flag"), String::from("value")]),
+      i
+    });
+
+    let obtained = parse(script, dir_default, src, i);
 
     assert_eq!(expected, obtained);
   }

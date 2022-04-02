@@ -62,8 +62,10 @@ fn parse<'a>(script: &'a str, dir: &str, src: &str, i: usize) -> Option<Output> 
   let mut parts_path = data.iter().nth(0).unwrap().split("/").collect::<Vec<&str>>();
   let parts_filename = parts_path.split_off(parts_path.len() - 1).last().unwrap().split(".").collect::<Vec<&str>>();
 
+  let p_f_len = parts_filename.len();
+
   let dir = if parts_path.len() > 0 { parts_path.join("/") } else { dir.to_string() };
-  let basename = if parts_filename.len() == 2 { parts_filename.iter().nth(0).unwrap() } else { src.split(".").nth(0).unwrap() }.to_string();
+  let basename = if p_f_len > 1 { parts_filename[0..(p_f_len - 1)].join(".") } else { src.split(".").nth(0).unwrap().to_string() };
   let ext = parts_filename.iter().last().unwrap().to_string();
 
   /* assemble return value */
@@ -149,13 +151,37 @@ mod test {
   }
 
   #[test]
-  fn parse_returns_for_tag_data_full_plus_output_basename_some_output() {
+  fn parse_returns_for_tag_data_full_plus_singlepart_output_basename_some_output() {
 
     let (dir_default, src, i, code, _) = get_defaults_parse();
     let script = " script.ext program --flag value\n\n//code";
 
     let dir = String::from("scripts");
     let basename = String::from("script");
+    let ext = String::from("ext");
+    let path = Path { dir, basename, ext };
+
+    let expected = Option::Some(Output {
+      code,
+      path: path,
+      prog: String::from("program"),
+      args: Vec::from([String::from("--flag"), String::from("value")]),
+      i
+    });
+
+    let obtained = parse(script, dir_default, src, i);
+
+    assert_eq!(expected, obtained);
+  }
+
+  #[test]
+  fn parse_returns_for_tag_data_full_plus_multipart_output_basename_some_output() {
+
+    let (dir_default, src, i, code, _) = get_defaults_parse();
+    let script = " script.suffix1.suffix2.ext program --flag value\n\n//code";
+
+    let dir = String::from("scripts");
+    let basename = String::from("script.suffix1.suffix2");
     let ext = String::from("ext");
     let path = Path { dir, basename, ext };
 

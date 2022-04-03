@@ -30,25 +30,26 @@ fn main() {
 
   /* implement */
 
-  /* extract, save and run */
+  /* get each script incl. tag line, handle tag line, save and run */
   fs::read_to_string(src).expect(&format!("read source file '{}'", src))
     .split(tag)
     .skip(1) /* omit content preceding initial tag */
     .enumerate() /* yield also index (i) */
-    .map(|(i, script)| parse(script, dir, src, i))
+    .map(|(i, script_tagged)| parse(script_tagged, dir, src, i))
     .for_each(apply)
 }
 
-fn parse<'a>(script: &'a str, dir: &str, src: &str, i: usize) -> Option<Output> {
+fn parse<'a>(script_tagged: &'a str, dir: &str, src: &str, i: usize) -> Option<Output> {
 
-  let mut lines = script.lines();
+  let mut lines = script_tagged.lines();
 
-  /* extract data from tag */
+  /* get data items from tag line */
   let data = lines.nth(0).unwrap()
     .trim().split(" ").filter(|item| item.to_string() != "".to_string()) /* remove whitespace */
     .map(|item| item.to_string())
     .collect::<Vec<String>>();
 
+  /* handle data absent or bypass */
   if data.len() == 0 {
     println!("No tag data found for script no. {}", i + 1);
     return None;
@@ -58,14 +59,19 @@ fn parse<'a>(script: &'a str, dir: &str, src: &str, i: usize) -> Option<Output> 
     return None;
   }
 
-  /* get output path parts */
-  let mut parts_path = data.iter().nth(0).unwrap().split("/").collect::<Vec<&str>>();
-  let parts_filename = parts_path.split_off(parts_path.len() - 1).last().unwrap().split(".").collect::<Vec<&str>>();
+  /* generate output path */
 
+  /* get output path parts - break first data item on '/' */
+  let mut parts_path = data.iter().nth(0).unwrap().split("/").collect::<Vec<&str>>();
+  /* get output filename parts - separate last output path part and break on '.' */
+  let parts_filename = parts_path.split_off(parts_path.len() - 1).last().unwrap().split(".").collect::<Vec<&str>>();
   let p_f_len = parts_filename.len();
 
+  /* set as dir either remaining output path parts rejoined or default dir */
   let dir = if parts_path.len() > 0 { parts_path.join("/") } else { dir.to_string() };
+  /* set as basename either all but last output filename part or src extension */
   let basename = if p_f_len > 1 { parts_filename[0..(p_f_len - 1)].join(".") } else { src.split(".").nth(0).unwrap().to_string() };
+  /* set as ext last output filename part */
   let ext = parts_filename.iter().last().unwrap().to_string();
 
   /* assemble return value */
@@ -136,7 +142,7 @@ mod test {
   fn parse_returns_for_tag_data_full_some_output() {
 
     let (dir, src, i, code, path) = get_defaults_parse();
-    let script = " ext program --flag value\n\n//code";
+    let script_tagged = " ext program --flag value\n\n//code";
 
     let expected = Option::Some(Output {
       code, path,
@@ -145,7 +151,7 @@ mod test {
       i
     });
 
-    let obtained = parse(script, dir, src, i);
+    let obtained = parse(script_tagged, dir, src, i);
 
     assert_eq!(expected, obtained);
   }
@@ -154,7 +160,7 @@ mod test {
   fn parse_returns_for_tag_data_full_plus_singlepart_output_basename_some_output() {
 
     let (dir_default, src, i, code, _) = get_defaults_parse();
-    let script = " script.ext program --flag value\n\n//code";
+    let script_tagged = " script.ext program --flag value\n\n//code";
 
     let dir = String::from("scripts");
     let basename = String::from("script");
@@ -169,7 +175,7 @@ mod test {
       i
     });
 
-    let obtained = parse(script, dir_default, src, i);
+    let obtained = parse(script_tagged, dir_default, src, i);
 
     assert_eq!(expected, obtained);
   }
@@ -178,7 +184,7 @@ mod test {
   fn parse_returns_for_tag_data_full_plus_multipart_output_basename_some_output() {
 
     let (dir_default, src, i, code, _) = get_defaults_parse();
-    let script = " script.suffix1.suffix2.ext program --flag value\n\n//code";
+    let script_tagged = " script.suffix1.suffix2.ext program --flag value\n\n//code";
 
     let dir = String::from("scripts");
     let basename = String::from("script.suffix1.suffix2");
@@ -193,7 +199,7 @@ mod test {
       i
     });
 
-    let obtained = parse(script, dir_default, src, i);
+    let obtained = parse(script_tagged, dir_default, src, i);
 
     assert_eq!(expected, obtained);
   }
@@ -202,7 +208,7 @@ mod test {
   fn parse_returns_for_tag_data_full_plus_output_dir_some_output() {
 
     let (dir_default, src, i, code, _) = get_defaults_parse();
-    let script = " dir/script.ext program --flag value\n\n//code";
+    let script_tagged = " dir/script.ext program --flag value\n\n//code";
 
     let dir = String::from("dir");
     let basename = String::from("script");
@@ -217,7 +223,7 @@ mod test {
       i
     });
 
-    let obtained = parse(script, dir_default, src, i);
+    let obtained = parse(script_tagged, dir_default, src, i);
 
     assert_eq!(expected, obtained);
   }
@@ -226,7 +232,7 @@ mod test {
   fn parse_returns_for_tag_data_minus_cmd_some_output_indicating() {
 
     let (dir, src, i, code, path) = get_defaults_parse();
-    let script = " ext\n\n//code";
+    let script_tagged = " ext\n\n//code";
 
     let expected = Option::Some(Output {
       code, path,
@@ -235,7 +241,7 @@ mod test {
       i
     });
 
-    let obtained = parse(script, dir, src, i);
+    let obtained = parse(script_tagged, dir, src, i);
 
     assert_eq!(expected, obtained);
   }
@@ -244,10 +250,10 @@ mod test {
   fn parse_returns_for_tag_data_full_with_bypass_none() {
 
     let (dir, src, i, _, _) = get_defaults_parse();
-    let script = " ! ext program --flag value\n\n//code";
+    let script_tagged = " ! ext program --flag value\n\n//code";
 
     let expected = Option::None;
-    let obtained = parse(script, dir, src, i);
+    let obtained = parse(script_tagged, dir, src, i);
 
     assert_eq!(expected, obtained);
   }
@@ -256,10 +262,10 @@ mod test {
   fn parse_returns_for_tag_data_absent_none() {
 
     let (dir, src, i, _, _) = get_defaults_parse();
-    let script = "\n\n//code";
+    let script_tagged = "\n\n//code";
 
     let expected = Option::None;
-    let obtained = parse(script, dir, src, i);
+    let obtained = parse(script_tagged, dir, src, i);
 
     assert_eq!(expected, obtained);
   }

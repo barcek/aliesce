@@ -130,84 +130,78 @@ mod test {
 
   use super::{ Path, Output, parse };
 
-  fn get_defaults_parse() -> (&'static str, &'static str, usize, String, Path) {
-    let dir = String::from("scripts");
-    let basename = String::from("src");
-    let ext = String::from("ext");
-    let path = Path { dir, basename, ext };
-    ("scripts", "src.txt", 1, String::from("//code"), path)
+  fn get_values_parse() -> (&'static str, &'static str, usize, String, Vec<String>, String, Path) {
+
+    let dir_default_str = "scripts";
+    let src_default_str = "src.txt";
+    let src_basename_default_str = src_default_str.split(".").nth(0).unwrap();
+
+    /* base test script values */
+    let index = 1;
+    let ext   = String::from("ext");
+    let prog  = String::from("program");
+    let args  = Vec::from([String::from("--flag"), String::from("value")]);
+    let code  = String::from("//code");
+
+    let output_path = Path {
+      dir: String::from(dir_default_str),
+      basename: String::from(src_basename_default_str),
+      ext
+    };
+
+    (dir_default_str, src_default_str, index, prog, args, code, output_path)
   }
 
   #[test]
   fn parse_returns_for_tag_data_full_some_output() {
 
-    let (dir, src, i, code, path) = get_defaults_parse();
+    let (dir_default_str, src_default_str, i, prog, args, code, path) = get_values_parse();
     let script_tagged = " ext program --flag value\n\n//code";
 
-    let expected = Option::Some(Output {
-      code, path,
-      prog: String::from("program"),
-      args: Vec::from([String::from("--flag"), String::from("value")]),
-      i
-    });
-
-    let obtained = parse(script_tagged, dir, src, i);
+    let expected = Option::Some(Output { code, path, prog, args, i });
+    let obtained = parse(script_tagged, dir_default_str, src_default_str, i);
 
     assert_eq!(expected, obtained);
   }
 
   #[test]
-  fn parse_returns_for_tag_data_full_plus_singlepart_output_basename_some_output() {
+  fn parse_returns_for_tag_data_full_incl_singlepart_output_basename_some_output() {
 
-    let (dir_default, src, i, code, _) = get_defaults_parse();
+    let (dir_default_str, src_default_str, i, prog, args, code, _) = get_values_parse();
     let script_tagged = " script.ext program --flag value\n\n//code";
 
-    let dir = String::from("scripts");
+    let dir = String::from(dir_default_str);
     let basename = String::from("script");
     let ext = String::from("ext");
     let path = Path { dir, basename, ext };
 
-    let expected = Option::Some(Output {
-      code,
-      path: path,
-      prog: String::from("program"),
-      args: Vec::from([String::from("--flag"), String::from("value")]),
-      i
-    });
-
-    let obtained = parse(script_tagged, dir_default, src, i);
+    let expected = Option::Some(Output { code, path, prog, args, i });
+    let obtained = parse(script_tagged, dir_default_str, src_default_str, i);
 
     assert_eq!(expected, obtained);
   }
 
   #[test]
-  fn parse_returns_for_tag_data_full_plus_multipart_output_basename_some_output() {
+  fn parse_returns_for_tag_data_full_incl_multipart_output_basename_some_output() {
 
-    let (dir_default, src, i, code, _) = get_defaults_parse();
+    let (dir_default_str, src_default_str, i, prog, args, code, _) = get_values_parse();
     let script_tagged = " script.suffix1.suffix2.ext program --flag value\n\n//code";
 
-    let dir = String::from("scripts");
+    let dir = String::from(dir_default_str);
     let basename = String::from("script.suffix1.suffix2");
     let ext = String::from("ext");
     let path = Path { dir, basename, ext };
 
-    let expected = Option::Some(Output {
-      code,
-      path: path,
-      prog: String::from("program"),
-      args: Vec::from([String::from("--flag"), String::from("value")]),
-      i
-    });
-
-    let obtained = parse(script_tagged, dir_default, src, i);
+    let expected = Option::Some(Output { code, path, prog, args, i });
+    let obtained = parse(script_tagged, dir_default_str, src_default_str, i);
 
     assert_eq!(expected, obtained);
   }
 
   #[test]
-  fn parse_returns_for_tag_data_full_plus_output_dir_some_output() {
+  fn parse_returns_for_tag_data_full_incl_output_dir_some_output() {
 
-    let (dir_default, src, i, code, _) = get_defaults_parse();
+    let (dir_default_str, src_default_str, i, prog, args, code, _) = get_values_parse();
     let script_tagged = " dir/script.ext program --flag value\n\n//code";
 
     let dir = String::from("dir");
@@ -215,15 +209,8 @@ mod test {
     let ext = String::from("ext");
     let path = Path { dir, basename, ext };
 
-    let expected = Option::Some(Output {
-      code,
-      path: path,
-      prog: String::from("program"),
-      args: Vec::from([String::from("--flag"), String::from("value")]),
-      i
-    });
-
-    let obtained = parse(script_tagged, dir_default, src, i);
+    let expected = Option::Some(Output { code, path, prog, args, i });
+    let obtained = parse(script_tagged, dir_default_str, src_default_str, i);
 
     assert_eq!(expected, obtained);
   }
@@ -231,7 +218,7 @@ mod test {
   #[test]
   fn parse_returns_for_tag_data_minus_cmd_some_output_indicating() {
 
-    let (dir, src, i, code, path) = get_defaults_parse();
+    let (dir_default_str, src_default_str, i, _, _, code, path) = get_values_parse();
     let script_tagged = " ext\n\n//code";
 
     let expected = Option::Some(Output {
@@ -241,7 +228,7 @@ mod test {
       i
     });
 
-    let obtained = parse(script_tagged, dir, src, i);
+    let obtained = parse(script_tagged, dir_default_str, src_default_str, i);
 
     assert_eq!(expected, obtained);
   }
@@ -249,11 +236,11 @@ mod test {
   #[test]
   fn parse_returns_for_tag_data_full_with_bypass_none() {
 
-    let (dir, src, i, _, _) = get_defaults_parse();
+    let (dir_default_str, src_default_str, i, _, _, _, _) = get_values_parse();
     let script_tagged = " ! ext program --flag value\n\n//code";
 
     let expected = Option::None;
-    let obtained = parse(script_tagged, dir, src, i);
+    let obtained = parse(script_tagged, dir_default_str, src_default_str, i);
 
     assert_eq!(expected, obtained);
   }
@@ -261,11 +248,11 @@ mod test {
   #[test]
   fn parse_returns_for_tag_data_absent_none() {
 
-    let (dir, src, i, _, _) = get_defaults_parse();
+    let (dir_default_str, src_default_str, i, _, _, _, _) = get_values_parse();
     let script_tagged = "\n\n//code";
 
     let expected = Option::None;
-    let obtained = parse(script_tagged, dir, src, i);
+    let obtained = parse(script_tagged, dir_default_str, src_default_str, i);
 
     assert_eq!(expected, obtained);
   }

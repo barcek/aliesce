@@ -8,7 +8,9 @@ For smoother development of related code, to keep the source about as closely co
 
 ## How?
 
-Create a file with any name, and any extension or none. Use the current default - 'src.txt' - to avoid passing an argument later.
+Create a file for your scripts. Give it any name, and any extension or none. Use the current default name - 'src.txt' - to avoid passing an argument later.
+
+Write your scripts.
 
 Precede each script in the file with a tag line starting by default `###`. Include in the tag line the following elements:
 
@@ -18,13 +20,15 @@ Precede each script in the file with a tag line starting by default `###`. Inclu
 
 Ensure each element is separated by one or more spaces.
 
-For example, for Elixir:
+For example, a possible tag line for a script in Elixir:
 
 ```
 ### exs elixir -r setup
 ```
 
-This tells aliesce to save the subsequent script in a file with the `exs` extension then run that with the `elixir` command, applying one option, to require a file named 'setup'.
+This tells aliesce to save the script following the tag line in a file with the `exs` extension, then run that with the `elixir` command, applying one option, to require a file named 'setup'.
+
+### Output paths
 
 The basename of the output file will be the basename of the source file, i.e. 'src' by default. The file is saved by default to a folder in the current directory named `scripts`, which is created if not present.
 
@@ -39,6 +43,8 @@ For an output directory named 'output' holding 'script.exs':
 ```
 ### output/script.exs elixir -r setup
 ```
+
+### Running aliesce
 
 If aliesce is compiled and ready to go (see [Getting started](#getting-started) below), run the `aliesce` command, adding the source file name if not the default.
 

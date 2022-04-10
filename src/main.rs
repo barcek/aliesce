@@ -24,9 +24,10 @@ fn main() {
 
   let args: Vec<String> = env::args().collect();
 
-  let dir = "scripts";
+  /* set source filename (incl. output basename), script tag and output directory */
   let src = if &args.len() > &1 { &args[1] } else { "src.txt" };
   let tag = "###";
+  let dir = "scripts";
 
   /* implement */
 
@@ -59,7 +60,7 @@ fn parse<'a>(script_tagged: &'a str, dir: &str, src: &str, i: usize) -> Option<O
     return None;
   }
 
-  /* generate output path */
+  /* set output path parts */
 
   /* get output path parts - break first data item on '/' */
   let mut parts_path = data.iter().nth(0).unwrap().split("/").collect::<Vec<&str>>();
@@ -67,17 +68,21 @@ fn parse<'a>(script_tagged: &'a str, dir: &str, src: &str, i: usize) -> Option<O
   let parts_filename = parts_path.split_off(parts_path.len() - 1).last().unwrap().split(".").collect::<Vec<&str>>();
   let p_f_len = parts_filename.len();
 
-  /* set as dir either remaining output path parts rejoined or default dir */
+  /* set as dir either remaining output path parts recombined or default dir */
   let dir = if parts_path.len() > 0 { parts_path.join("/") } else { dir.to_string() };
-  /* set as basename either all but last output filename part or src extension */
+  /* set as basename either all but last output filename part or src basename */
   let basename = if p_f_len > 1 { parts_filename[0..(p_f_len - 1)].join(".") } else { src.split(".").nth(0).unwrap().to_string() };
   /* set as ext last output filename part */
   let ext = parts_filename.iter().last().unwrap().to_string();
 
   /* assemble return value */
+
+  /* set as code all lines but tag line, recombined */
   let code = lines.skip(1).collect::<Vec<&str>>().join("\n");
   let path = Path{ dir, basename, ext };
+  /* set as prog tag line second item else '?' indicating absence (cf. function exec below) */
   let prog = if data.len() != 1 { data.iter().nth(1).unwrap().to_owned() } else { "?".to_string() };
+  /* set as args Vec containing tag line remaining items */
   let args = data.iter().skip(2).map(|arg| arg.to_owned()).collect::<Vec<String>>();
 
   return Some(Output { code, path, prog, args, i });

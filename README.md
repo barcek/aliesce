@@ -2,6 +2,18 @@
 
 Write, save and run scripts in multiple languages from a single source file.
 
+Just provide a simple tag line above each script containing values to be used in the handling.
+
+- [Why..?](#why)
+- [How..?](#how)
+  - [Output paths](#output-paths)
+  - [Running aliesce](#running-aliesce)
+  - [Avoiding stages](#avoiding-stages)
+- [Getting started](#getting-started)
+- [Making changes](#making-changes)
+  - [Tests](#tests)
+- [Development plan](#development-plan)
+
 ## Why?
 
 For smoother development of related code, to keep the source about as closely collocated as possible, or for practice, for a more direct absorption of syntax and idiom.
@@ -12,7 +24,7 @@ Create a file for your scripts. Give it any name, and any extension or none. Use
 
 Write your scripts.
 
-Precede each script in the file with a tag line starting by default `###`. Include in the tag line the following elements:
+Immediately above each script, add a tag line starting by default `###`. Include in the tag line the following elements:
 
 - the file extension for that language, or the full output filename including extension, or the full output path including directory and extension
 - the command to run the file, if any

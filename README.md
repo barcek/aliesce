@@ -9,6 +9,8 @@ Just provide a simple tag line above each script containing values to be used in
   - [Output paths](#output-paths)
   - [Running aliesce](#running-aliesce)
   - [Avoiding stages](#avoiding-stages)
+  - [Labelling](#labelling)
+  - [Options](#options)
 - [Getting started](#getting-started)
 - [Making changes](#making-changes)
   - [Tests](#tests)
@@ -81,6 +83,20 @@ To save the script but avoid the run stage, include the `!` character as an elem
 ```
 ### script.exs ! elixir -r setup
 ```
+
+### Labelling
+
+To add a label to a script, include it after the tag head and follow it with the tag tail, which is `#` by default:
+
+```
+### script label # script.exs elixir -r setup
+```
+
+### Options
+
+The following can be passed to `aliesce` before any source file name:
+
+- `--list` / `-l`, to print for each script in the source file its number and tag line name and data, skipping the save and run stages
 
 ## Getting started
 

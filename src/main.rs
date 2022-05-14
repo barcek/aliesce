@@ -28,6 +28,12 @@ fn main() {
 
   /* provide for any flag passed */
   let mut opts_list = false;
+  if args_count > 1 && ("-h" == args[1] || "--help" == args[1]) {
+    let usage = "Usage: aliesce [--help/-h / [--list/-l] [src]]";
+    let flags = "Flags:\n -l, --list  print for each script in the source file its number and tag line name and data, skipping the save and run stages\n -h, --help  show usage and a list of available flags then exit";
+    println!("{}\n{}", usage, flags);
+    process::exit(0);
+  };
   if args_count > 1 && ("-l" == args[1] || "--list" == args[1]) {
     opts_list = true;
     args_count = args_count - 1;

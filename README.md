@@ -96,6 +96,7 @@ To add a label to a script, include it after the tag head and follow it with the
 
 The following can be passed to `aliesce` before any source file name:
 
+- `--help` / `-h`, to show usage and a list of available flags then exit
 - `--list` / `-l`, to print for each script in the source file its number and tag line name and data, skipping the save and run stages
 
 ## Getting started

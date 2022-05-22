@@ -1,6 +1,18 @@
 use std::env;
 use std::fs;
 use std::process;
+use std::collections::HashMap;
+
+enum OptValue {
+  Bool(bool)
+}
+
+struct CLIOption {
+  word: String,
+  char: String,
+  desc: String,
+  call: Box<dyn Fn(&[CLIOption; 2], HashMap<String, OptValue>) -> HashMap<String, OptValue>>
+}
 
 #[derive(Debug, PartialEq)]
 struct Path {
@@ -20,24 +32,57 @@ struct Output {
 
 fn main() {
 
+  /* initialize */
+
+  /* set CLI options */
+  let cli_option_list = CLIOption {
+    word: String::from("list"),
+    char: String::from("l"),
+    desc: String::from("print for each script in the source file its number and tag line name and data, skipping the save and run stages"),
+    call: Box::new(|_: &[CLIOption; 2], mut opts_values: HashMap<String, OptValue>| {
+      opts_values.insert( "is_list".to_string(), OptValue::Bool(false) );
+      opts_values
+    })
+  };
+  let cli_option_help = CLIOption {
+    word: String::from("help"),
+    char: String::from("h"),
+    desc: String::from("show usage and a list of available flags then exit"),
+    call: Box::new(|cli_options: &[CLIOption; 2], _: HashMap<String, OptValue> | {
+      let usage = "Usage: aliesce [--help/-h / [--list/-l] [src]]";
+      let mut flags = String::from("Flags:");
+      for cli_option in cli_options.iter() {
+        flags = [flags, format!(" -{}, --{}  {}", cli_option.char, cli_option.word, cli_option.desc)].join("\n");
+      };
+      println!("{}\n{}", usage, flags);
+      process::exit(0);
+    })
+  };
+  let cli_options = [
+    cli_option_list,
+    cli_option_help
+  ];
+
   /* configure */
 
   /* get arguments and set count */
   let args: Vec<String> = env::args().collect();
-  let mut args_count: isize = args.len().try_into().unwrap();
+  let mut args_count: usize = args.len().try_into().unwrap();
 
   /* provide for any flag passed */
-  let mut opts_list = false;
-  if args_count > 1 && ("-h" == args[1] || "--help" == args[1]) {
-    let usage = "Usage: aliesce [--help/-h / [--list/-l] [src]]";
-    let flags = "Flags:\n -l, --list  print for each script in the source file its number and tag line name and data, skipping the save and run stages\n -h, --help  show usage and a list of available flags then exit";
-    println!("{}\n{}", usage, flags);
-    process::exit(0);
+  let mut opts_values = HashMap::new();
+  let mut opts_count = 0;
+  if args_count > 1 {
+    for i in 0..cli_options.len() {
+      for j in 1..args_count {
+        if "--".to_owned() + &cli_options[i].word == args[j] || "-".to_owned() + &cli_options[i].char == args[j] {
+          opts_values = (cli_options[i].call)(&cli_options, opts_values);
+          opts_count = opts_count + 1;
+        };
+      };
+    };
   };
-  if args_count > 1 && ("-l" == args[1] || "--list" == args[1]) {
-    opts_list = true;
-    args_count = args_count - 1;
-  };
+  args_count = args_count - opts_count;
 
   /* set source filename (incl. output basename), script tag and output directory */
   let src = if args_count > 1 { &args.last().unwrap() } else { "src.txt" };
@@ -51,11 +96,11 @@ fn main() {
     .split(tag.0)
     .skip(1) /* omit content preceding initial tag */
     .enumerate() /* yield also index (i) */
-    .map(|(i, script_plus_tag_line_part)| parse(script_plus_tag_line_part, tag.1, dir, src, i, opts_list))
+    .map(|(i, script_plus_tag_line_part)| parse(script_plus_tag_line_part, tag.1, dir, src, i, &opts_values))
     .for_each(apply)
 }
 
-fn parse<'a>(script_plus_tag_line_part: &'a str, tag_1: &str, dir: &str, src: &str, i: usize, opts_list: bool) -> Option<Output> {
+fn parse<'a>(script_plus_tag_line_part: &'a str, tag_1: &str, dir: &str, src: &str, i: usize, opts_values: &HashMap<String, OptValue>) -> Option<Output> {
 
   let mut lines = script_plus_tag_line_part.lines();
   let tag_line_part = lines.nth(0).unwrap().trim();
@@ -66,7 +111,7 @@ fn parse<'a>(script_plus_tag_line_part: &'a str, tag_1: &str, dir: &str, src: &s
   let tag_line_data = tag_line_subparts.1.trim();
 
   /* handle option selected - list */
-  if opts_list {
+  if opts_values.contains_key("is_list") {
     let tag_line_part_new = if tag_line_label.len() > 0 { format!("{}: {}", tag_line_label, tag_line_data) } else { tag_line_data.to_string() };
     println!("{}: {}", i + 1, tag_line_part_new);
     return None;

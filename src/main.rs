@@ -3,15 +3,18 @@ use std::fs;
 use std::process;
 use std::collections::HashMap;
 
+#[derive(PartialEq, Eq)]
 enum OptValue {
-  Bool(bool)
+  Bool(bool),
+  Int(usize)
 }
 
 struct CLIOption {
   word: String,
   char: String,
+  vals: Vec<String>,
   desc: String,
-  call: Box<dyn Fn(&[CLIOption; 2], HashMap<String, OptValue>) -> HashMap<String, OptValue>>
+  call: Box<dyn Fn(&[CLIOption; 3], HashMap<String, OptValue>, Vec<String>) -> HashMap<String, OptValue>>
 }
 
 #[derive(Debug, PartialEq)]
@@ -38,28 +41,54 @@ fn main() {
   let cli_option_list = CLIOption {
     word: String::from("list"),
     char: String::from("l"),
-    desc: String::from("print for each script in the source file its number and tag line name and data, skipping the save and run stages"),
-    call: Box::new(|_: &[CLIOption; 2], mut opts_values: HashMap<String, OptValue>| {
+    vals: Vec::new(),
+    desc: String::from("print for each script in the source file its number and tag line label and data, skipping the save and run stages"),
+    call: Box::new(|_0: &[CLIOption; 3], mut opts_values: HashMap<String, OptValue>, _1: Vec<String>| {
       opts_values.insert( "is_list".to_string(), OptValue::Bool(false) );
+      opts_values
+    })
+  };
+  let cli_option_only = CLIOption {
+    word: String::from("only"),
+    char: String::from("o"),
+    vals: Vec::from([String::from("NUMBER")]),
+    desc: String::from("include only script no. NUMBER"),
+    call: Box::new(|_: &[CLIOption; 3], mut opts_values: HashMap<String, OptValue>, vals: Vec<String>| {
+      let val = vals[0].trim().parse::<usize>().expect("parse script number for option 'only'");
+      opts_values.insert("script_no".to_string(), OptValue::Int(val));
       opts_values
     })
   };
   let cli_option_help = CLIOption {
     word: String::from("help"),
     char: String::from("h"),
+    vals: Vec::new(),
     desc: String::from("show usage and a list of available flags then exit"),
-    call: Box::new(|cli_options: &[CLIOption; 2], _: HashMap<String, OptValue> | {
-      let usage = "Usage: aliesce [--help/-h / [--list/-l] [src]]";
-      let mut flags = String::from("Flags:");
-      for cli_option in cli_options.iter() {
-        flags = [flags, format!(" -{}, --{}  {}", cli_option.char, cli_option.word, cli_option.desc)].join("\n");
-      };
-      println!("{}\n{}", usage, flags);
+    call: Box::new(|cli_options: &[CLIOption; 3], _0: HashMap<String, OptValue>, _1: Vec<String> | {
+
+      let usage = "Usage: aliesce [--help/-h / [--list/-l] [--only/-o] [src]]";
+
+      /* set value substrings and max length */
+      let val_strs = cli_options.iter()
+        .map(|cli_option|format!("{}", cli_option.vals.join(" ")))
+        .collect::<Vec<String>>();
+      let val_strs_max = val_strs.iter()
+        .fold(0, |acc, val_str| if val_str.len() > acc { val_str.len() } else { acc });
+
+      /* generate list of flags */
+      let flags_list = cli_options.iter()
+        .enumerate() /* yield also index (i) */
+        .map(|(i, cli_option)|format!(" -{}, --{}  {:w$}  {}", cli_option.char, cli_option.word, val_strs[i], cli_option.desc, w = val_strs_max))
+        .collect::<Vec<String>>()
+        .join("\n");
+
+      println!("{}\n{}\n{}", usage, String::from("Flags:"), flags_list);
       process::exit(0);
     })
   };
   let cli_options = [
     cli_option_list,
+    cli_option_only,
     cli_option_help
   ];
 
@@ -76,8 +105,10 @@ fn main() {
     for i in 0..cli_options.len() {
       for j in 1..args_count {
         if "--".to_owned() + &cli_options[i].word == args[j] || "-".to_owned() + &cli_options[i].char == args[j] {
-          opts_values = (cli_options[i].call)(&cli_options, opts_values);
-          opts_count = opts_count + 1;
+          let vals_len = cli_options[i].vals.len();
+          let vals = args[(j + 1)..(j + vals_len + 1)].to_vec();
+          opts_values = (cli_options[i].call)(&cli_options, opts_values, vals);
+          opts_count = opts_count + 1 + vals_len;
         };
       };
     };
@@ -96,6 +127,7 @@ fn main() {
     .split(tag.0)
     .skip(1) /* omit content preceding initial tag */
     .enumerate() /* yield also index (i) */
+    .filter(|(i, _)| !opts_values.contains_key("script_no") || opts_values.get("script_no").unwrap() == &OptValue::Int(i + 1) )
     .map(|(i, script_plus_tag_line_part)| parse(script_plus_tag_line_part, tag.1, dir, src, i, &opts_values))
     .for_each(apply)
 }

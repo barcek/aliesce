@@ -3,22 +3,24 @@ use std::fs;
 use std::process;
 use std::collections::HashMap;
 
+/* define data structures */
+
 #[derive(PartialEq, Eq)]
-enum OptValue {
+enum CLIOptVal {
   Bool(bool),
   Int(usize)
 }
 
-struct CLIOption {
+struct CLIOpt {
   word: String,
   char: String,
   vals: Vec<String>,
   desc: String,
-  call: Box<dyn Fn(&[CLIOption; 3], HashMap<String, OptValue>, Vec<String>) -> HashMap<String, OptValue>>
+  call: Box<dyn Fn(&[CLIOpt; 3], HashMap<String, CLIOptVal>, Vec<String>) -> HashMap<String, CLIOptVal>>
 }
 
 #[derive(Debug, PartialEq)]
-struct Path {
+struct OutputPath {
   dir: String,
   basename: String,
   ext: String
@@ -27,10 +29,57 @@ struct Path {
 #[derive(Debug, PartialEq)]
 struct Output {
   code: String,
-  path: Path,
+  path: OutputPath,
   prog: String,
   args: Vec<String>,
   i: usize
+}
+
+/* define utility functions */
+
+fn get_cli_option(word: &str, char: &str, vals: &[&str], desc: &str, call: &'static dyn Fn(&[CLIOpt; 3], HashMap<String, CLIOptVal>, Vec<String>) -> HashMap<String, CLIOptVal>) -> CLIOpt {
+  CLIOpt {
+    word: String::from(word),
+    char: String::from(char),
+    vals: if vals.len() > 0 { vals.iter().map(|&val|String::from(val)).collect::<Vec<String>>() } else { Vec::new() },
+    desc: String::from(desc),
+    call: Box::new(call)
+  }
+}
+
+/* define CLI option applicators */
+
+fn apply_cli_option_list(_0: &[CLIOpt; 3], mut opts_values: HashMap<String, CLIOptVal>, _1: Vec<String>) -> HashMap<String, CLIOptVal> {
+  opts_values.insert( "is_list".to_string(), CLIOptVal::Bool(false) );
+  opts_values
+}
+
+fn apply_cli_option_only(_: &[CLIOpt; 3], mut opts_values: HashMap<String, CLIOptVal>, vals: Vec<String>) -> HashMap<String, CLIOptVal> {
+  let val = vals[0].trim().parse::<usize>().expect("parse script number for option 'only'");
+  opts_values.insert("script_no".to_string(), CLIOptVal::Int(val));
+  opts_values
+}
+
+fn apply_cli_option_help(cli_options: &[CLIOpt; 3], _0: HashMap<String, CLIOptVal>, _1: Vec<String>) -> HashMap<String, CLIOptVal> {
+
+  let usage = "Usage: aliesce [--help/-h / [--list/-l] [--only/-o] [src]]";
+
+  /* set value substrings and max length */
+  let val_strs = cli_options.iter()
+    .map(|cli_option|format!("{}", cli_option.vals.join(" ")))
+    .collect::<Vec<String>>();
+  let val_strs_max = val_strs.iter()
+    .fold(0, |acc, val_str| if val_str.len() > acc { val_str.len() } else { acc });
+
+  /* generate list of flags */
+  let flags_list = cli_options.iter()
+    .enumerate() /* yield also index (i) */
+    .map(|(i, cli_option)|format!(" -{}, --{}  {:w$}  {}", cli_option.char, cli_option.word, val_strs[i], cli_option.desc, w = val_strs_max))
+    .collect::<Vec<String>>()
+    .join("\n");
+
+  println!("{}\n{}\n{}", usage, String::from("Flags:"), flags_list);
+  process::exit(0);
 }
 
 fn main() {
@@ -38,58 +87,10 @@ fn main() {
   /* initialize */
 
   /* set CLI options */
-  let cli_option_list = CLIOption {
-    word: String::from("list"),
-    char: String::from("l"),
-    vals: Vec::new(),
-    desc: String::from("print for each script in the source file its number and tag line label and data, skipping the save and run stages"),
-    call: Box::new(|_0: &[CLIOption; 3], mut opts_values: HashMap<String, OptValue>, _1: Vec<String>| {
-      opts_values.insert( "is_list".to_string(), OptValue::Bool(false) );
-      opts_values
-    })
-  };
-  let cli_option_only = CLIOption {
-    word: String::from("only"),
-    char: String::from("o"),
-    vals: Vec::from([String::from("NUMBER")]),
-    desc: String::from("include only script no. NUMBER"),
-    call: Box::new(|_: &[CLIOption; 3], mut opts_values: HashMap<String, OptValue>, vals: Vec<String>| {
-      let val = vals[0].trim().parse::<usize>().expect("parse script number for option 'only'");
-      opts_values.insert("script_no".to_string(), OptValue::Int(val));
-      opts_values
-    })
-  };
-  let cli_option_help = CLIOption {
-    word: String::from("help"),
-    char: String::from("h"),
-    vals: Vec::new(),
-    desc: String::from("show usage and a list of available flags then exit"),
-    call: Box::new(|cli_options: &[CLIOption; 3], _0: HashMap<String, OptValue>, _1: Vec<String> | {
-
-      let usage = "Usage: aliesce [--help/-h / [--list/-l] [--only/-o] [src]]";
-
-      /* set value substrings and max length */
-      let val_strs = cli_options.iter()
-        .map(|cli_option|format!("{}", cli_option.vals.join(" ")))
-        .collect::<Vec<String>>();
-      let val_strs_max = val_strs.iter()
-        .fold(0, |acc, val_str| if val_str.len() > acc { val_str.len() } else { acc });
-
-      /* generate list of flags */
-      let flags_list = cli_options.iter()
-        .enumerate() /* yield also index (i) */
-        .map(|(i, cli_option)|format!(" -{}, --{}  {:w$}  {}", cli_option.char, cli_option.word, val_strs[i], cli_option.desc, w = val_strs_max))
-        .collect::<Vec<String>>()
-        .join("\n");
-
-      println!("{}\n{}\n{}", usage, String::from("Flags:"), flags_list);
-      process::exit(0);
-    })
-  };
   let cli_options = [
-    cli_option_list,
-    cli_option_only,
-    cli_option_help
+    get_cli_option("list", "l", &[], "print for each script in the source file its number and tag line label and data, skipping the save and run stages", &apply_cli_option_list),
+    get_cli_option("only", "o", &["NUMBER"], "include only script no. NUMBER", &apply_cli_option_only),
+    get_cli_option("help", "h", &[], "show usage and a list of available flags then exit", &apply_cli_option_help)
   ];
 
   /* configure */
@@ -127,12 +128,12 @@ fn main() {
     .split(tag.0)
     .skip(1) /* omit content preceding initial tag */
     .enumerate() /* yield also index (i) */
-    .filter(|(i, _)| !opts_values.contains_key("script_no") || opts_values.get("script_no").unwrap() == &OptValue::Int(i + 1) )
+    .filter(|(i, _)| !opts_values.contains_key("script_no") || opts_values.get("script_no").unwrap() == &CLIOptVal::Int(i + 1) )
     .map(|(i, script_plus_tag_line_part)| parse(script_plus_tag_line_part, tag.1, dir, src, i, &opts_values))
     .for_each(apply)
 }
 
-fn parse<'a>(script_plus_tag_line_part: &'a str, tag_1: &str, dir: &str, src: &str, i: usize, opts_values: &HashMap<String, OptValue>) -> Option<Output> {
+fn parse<'a>(script_plus_tag_line_part: &'a str, tag_1: &str, dir: &str, src: &str, i: usize, opts_values: &HashMap<String, CLIOptVal>) -> Option<Output> {
 
   let mut lines = script_plus_tag_line_part.lines();
   let tag_line_part = lines.nth(0).unwrap().trim();
@@ -183,7 +184,7 @@ fn parse<'a>(script_plus_tag_line_part: &'a str, tag_1: &str, dir: &str, src: &s
 
   /* set as code all lines but tag line, recombined */
   let code = lines.skip(1).collect::<Vec<&str>>().join("\n");
-  let path = Path{ dir, basename, ext };
+  let path = OutputPath{ dir, basename, ext };
   /* set as prog tag line second item else '?' indicating absence (cf. function exec below) */
   let prog = if data.len() != 1 { data.iter().nth(1).unwrap().to_owned() } else { "?".to_string() };
   /* set as args Vec containing tag line remaining items */
@@ -225,7 +226,7 @@ fn apply(output: Option<Output>) {
   };
 
   /* destructure and join */
-  let Path { dir, basename, ext } = path;
+  let OutputPath { dir, basename, ext } = path;
   let path = format!("{}/{}.{}", dir, basename, ext);
 
   /* perform final tasks */
@@ -238,9 +239,9 @@ fn apply(output: Option<Output>) {
 mod test {
 
   use::std::collections::HashMap;
-  use super::{ OptValue, Path, Output, parse };
+  use super::{ CLIOptVal, OutputPath, Output, parse };
 
-  fn get_values_parse() -> (&'static str, &'static str, &'static str, usize, String, Vec<String>, String, Path, HashMap<String, OptValue>) {
+  fn get_values_parse() -> (&'static str, &'static str, &'static str, usize, String, Vec<String>, String, OutputPath, HashMap<String, CLIOptVal>) {
 
     let dir_default_str = "scripts";
     let src_default_str = "src.txt";
@@ -256,7 +257,7 @@ mod test {
     let args  = Vec::from([String::from("--flag"), String::from("value")]);
     let code  = String::from("//code");
 
-    let output_path = Path {
+    let output_path = OutputPath {
       dir: String::from(dir_default_str),
       basename: String::from(src_basename_default_str),
       ext
@@ -296,7 +297,7 @@ mod test {
     let script_plus_tag_line_part = " ext program --flag value\n\n//code";
 
     let mut opts_values_default = HashMap::new();
-    opts_values_default.insert("is_list".to_string(), OptValue::Bool(true));
+    opts_values_default.insert("is_list".to_string(), CLIOptVal::Bool(true));
 
     let expected = Option::None;
     let obtained = parse(script_plus_tag_line_part, tag_1_default, dir_default_str, src_default_str, i, &opts_values_default);
@@ -313,7 +314,7 @@ mod test {
     let dir = String::from(dir_default_str);
     let basename = String::from("script");
     let ext = String::from("ext");
-    let path = Path { dir, basename, ext };
+    let path = OutputPath { dir, basename, ext };
 
     let expected = Option::Some(Output { code, path, prog, args, i });
     let obtained = parse(script_plus_tag_line_part, tag_1_default, dir_default_str, src_default_str, i, &opts_values_default);
@@ -330,7 +331,7 @@ mod test {
     let dir = String::from(dir_default_str);
     let basename = String::from("script.suffix1.suffix2");
     let ext = String::from("ext");
-    let path = Path { dir, basename, ext };
+    let path = OutputPath { dir, basename, ext };
 
     let expected = Option::Some(Output { code, path, prog, args, i });
     let obtained = parse(script_plus_tag_line_part, tag_1_default, dir_default_str, src_default_str, i, &opts_values_default);
@@ -347,7 +348,7 @@ mod test {
     let dir = String::from("dir");
     let basename = String::from("script");
     let ext = String::from("ext");
-    let path = Path { dir, basename, ext };
+    let path = OutputPath { dir, basename, ext };
 
     let expected = Option::Some(Output { code, path, prog, args, i });
     let obtained = parse(script_plus_tag_line_part, tag_1_default, dir_default_str, src_default_str, i, &opts_values_default);

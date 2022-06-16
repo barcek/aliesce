@@ -16,7 +16,7 @@ struct CLIOpt {
   char: String,
   vals: Vec<String>,
   desc: String,
-  call: Box<dyn Fn(&[CLIOpt; 3], HashMap<String, CLIOptVal>, Vec<String>) -> HashMap<String, CLIOptVal>>
+  call: Box<dyn Fn(&[CLIOpt], HashMap<String, CLIOptVal>, Vec<String>) -> HashMap<String, CLIOptVal>>
 }
 
 #[derive(Debug, PartialEq)]
@@ -37,7 +37,7 @@ struct Output {
 
 /* define utility functions */
 
-fn get_cli_option(word: &str, char: &str, vals: &[&str], desc: &str, call: &'static dyn Fn(&[CLIOpt; 3], HashMap<String, CLIOptVal>, Vec<String>) -> HashMap<String, CLIOptVal>) -> CLIOpt {
+fn get_cli_option(word: &str, char: &str, vals: &[&str], desc: &str, call: &'static dyn Fn(&[CLIOpt], HashMap<String, CLIOptVal>, Vec<String>) -> HashMap<String, CLIOptVal>) -> CLIOpt {
   CLIOpt {
     word: String::from(word),
     char: String::from(char),
@@ -49,18 +49,18 @@ fn get_cli_option(word: &str, char: &str, vals: &[&str], desc: &str, call: &'sta
 
 /* define CLI option applicators */
 
-fn apply_cli_option_list(_0: &[CLIOpt; 3], mut opts_values: HashMap<String, CLIOptVal>, _1: Vec<String>) -> HashMap<String, CLIOptVal> {
+fn apply_cli_option_list(_0: &[CLIOpt], mut opts_values: HashMap<String, CLIOptVal>, _1: Vec<String>) -> HashMap<String, CLIOptVal> {
   opts_values.insert( "is_list".to_string(), CLIOptVal::Bool(false) );
   opts_values
 }
 
-fn apply_cli_option_only(_: &[CLIOpt; 3], mut opts_values: HashMap<String, CLIOptVal>, vals: Vec<String>) -> HashMap<String, CLIOptVal> {
+fn apply_cli_option_only(_: &[CLIOpt], mut opts_values: HashMap<String, CLIOptVal>, vals: Vec<String>) -> HashMap<String, CLIOptVal> {
   let val = vals[0].trim().parse::<usize>().expect("parse script number for option 'only'");
   opts_values.insert("script_no".to_string(), CLIOptVal::Int(val));
   opts_values
 }
 
-fn apply_cli_option_help(cli_options: &[CLIOpt; 3], _0: HashMap<String, CLIOptVal>, _1: Vec<String>) -> HashMap<String, CLIOptVal> {
+fn apply_cli_option_help(cli_options: &[CLIOpt], _0: HashMap<String, CLIOptVal>, _1: Vec<String>) -> HashMap<String, CLIOptVal> {
 
   let usage = "Usage: aliesce [--help/-h / [--list/-l] [--only/-o] [src]]";
 

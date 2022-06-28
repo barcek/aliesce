@@ -16,7 +16,7 @@ struct CLIOpt {
   char: String,
   vals: Vec<String>,
   desc: String,
-  call: Box<dyn Fn(&[CLIOpt], HashMap<String, CLIOptVal>, Vec<String>) -> HashMap<String, CLIOptVal>>
+  call: Box<dyn Fn((&str, (&str, &str), &str), &[CLIOpt], HashMap<String, CLIOptVal>, Vec<String>) -> HashMap<String, CLIOptVal>>
 }
 
 #[derive(Debug, PartialEq)]
@@ -37,7 +37,7 @@ struct Output {
 
 /* define utility functions */
 
-fn get_cli_option(word: &str, char: &str, vals: &[&str], desc: &str, call: &'static dyn Fn(&[CLIOpt], HashMap<String, CLIOptVal>, Vec<String>) -> HashMap<String, CLIOptVal>) -> CLIOpt {
+fn get_cli_option(word: &str, char: &str, vals: &[&str], desc: &str, call: &'static dyn Fn((&str, (&str, &str), &str), &[CLIOpt], HashMap<String, CLIOptVal>, Vec<String>) -> HashMap<String, CLIOptVal>) -> CLIOpt {
   CLIOpt {
     word: String::from(word),
     char: String::from(char),
@@ -49,20 +49,36 @@ fn get_cli_option(word: &str, char: &str, vals: &[&str], desc: &str, call: &'sta
 
 /* define CLI option applicators */
 
-fn apply_cli_option_list(_0: &[CLIOpt], mut opts_values: HashMap<String, CLIOptVal>, _1: Vec<String>) -> HashMap<String, CLIOptVal> {
+fn apply_cli_option_list(_0: (&str, (&str, &str), &str), _1: &[CLIOpt], mut opts_values: HashMap<String, CLIOptVal>, _2: Vec<String>) -> HashMap<String, CLIOptVal> {
   opts_values.insert( "is_list".to_string(), CLIOptVal::Bool(false) );
   opts_values
 }
 
-fn apply_cli_option_only(_: &[CLIOpt], mut opts_values: HashMap<String, CLIOptVal>, vals: Vec<String>) -> HashMap<String, CLIOptVal> {
+fn apply_cli_option_only(_0: (&str, (&str, &str), &str), _1: &[CLIOpt], mut opts_values: HashMap<String, CLIOptVal>, vals: Vec<String>) -> HashMap<String, CLIOptVal> {
   let val = vals[0].trim().parse::<usize>().expect("parse script number for option 'only'");
   opts_values.insert("script_no".to_string(), CLIOptVal::Int(val));
   opts_values
 }
 
-fn apply_cli_option_help(cli_options: &[CLIOpt], _0: HashMap<String, CLIOptVal>, _1: Vec<String>) -> HashMap<String, CLIOptVal> {
+fn apply_cli_option_push(settings: (&str, (&str, &str), &str), _0: &[CLIOpt], _1: HashMap<String, CLIOptVal>, vals: Vec<String>) -> HashMap<String, CLIOptVal> {
 
-  let usage = "Usage: aliesce [--help/-h / [--list/-l] [--only/-o] [src]]";
+  use std::io::Write;
+
+  let script_filename = &vals[1];
+  let (src, tag, _) = settings;
+
+  let script = fs::read_to_string(script_filename).expect(&format!("read script file '{}'", script_filename));
+  let script_plus_tag_line = format!("\n{} {}\n\n{}", tag.0, vals[0], script.trim());
+
+  let mut file = fs::OpenOptions::new().append(true).open(src).unwrap();
+  writeln!(file, "{}", script_plus_tag_line).expect("append script to source file");
+
+  process::exit(0);
+}
+
+fn apply_cli_option_help(_0: (&str, (&str, &str), &str), cli_options: &[CLIOpt], _1: HashMap<String, CLIOptVal>, _2: Vec<String>) -> HashMap<String, CLIOptVal> {
+
+  let usage = "Usage: aliesce [--help/-h / [--list/-l] [--only/-o NUMBER] [--push/-p TAG_LINE FILENAME] [src]]";
 
   /* set value substrings and max length */
   let val_strs = cli_options.iter()
@@ -90,6 +106,7 @@ fn main() {
   let cli_options = [
     get_cli_option("list", "l", &[], "print for each script in the source file its number and tag line label and data, skipping the save and run stages", &apply_cli_option_list),
     get_cli_option("only", "o", &["NUMBER"], "include only script no. NUMBER", &apply_cli_option_only),
+    get_cli_option("push", "p", &["TAG_LINE", "FILENAME"], "append TAG_LINE and the content of FILENAME to the source file", &apply_cli_option_push),
     get_cli_option("help", "h", &[], "show usage and a list of available flags then exit", &apply_cli_option_help)
   ];
 
@@ -99,8 +116,8 @@ fn main() {
   let args: Vec<String> = env::args().collect();
   let mut args_count: usize = args.len().try_into().unwrap();
 
-  /* provide for any flag passed */
-  let mut opts_values = HashMap::new();
+  /* for each flag passed queue option call with any values and tally */
+  let mut opts_queued = Vec::new();
   let mut opts_count = 0;
   if args_count > 1 {
     for i in 0..cli_options.len() {
@@ -108,7 +125,7 @@ fn main() {
         if "--".to_owned() + &cli_options[i].word == args[j] || "-".to_owned() + &cli_options[i].char == args[j] {
           let vals_len = cli_options[i].vals.len();
           let vals = args[(j + 1)..(j + vals_len + 1)].to_vec();
-          opts_values = (cli_options[i].call)(&cli_options, opts_values, vals);
+          opts_queued.push((&cli_options[i].call, vals));
           opts_count = opts_count + 1 + vals_len;
         };
       };
@@ -120,6 +137,15 @@ fn main() {
   let src = if args_count > 1 { &args.last().unwrap() } else { "src.txt" };
   let tag = ("###", "#");
   let dir = "scripts";
+
+  /* make any queued option calls */
+  let mut opts_values = HashMap::new();
+  if opts_queued.len() > 0 {
+    for i in 0..opts_queued.len() {
+      let (call, vals) = &opts_queued[i];
+      opts_values = call((src, tag, dir), &cli_options, opts_values, vals.to_vec());
+    }
+  }
 
   /* implement */
 

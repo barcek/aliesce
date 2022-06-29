@@ -2,10 +2,9 @@
 
 Write, save and run scripts in multiple languages from a single source file.
 
-Just provide a simple tag line above each script containing values to be used in the handling.
-
 - [Why..?](#why)
 - [How..?](#how)
+  - [Source file setup](#source-file-setup)
   - [Output paths](#output-paths)
   - [Running aliesce](#running-aliesce)
   - [Avoiding stages](#avoiding-stages)
@@ -22,11 +21,15 @@ For smoother development of related code, to keep the source about as closely co
 
 ## How?
 
+By providing a simple tag line above each script containing values to be used in the handling.
+
+## Source file setup
+
 Create a file for your scripts. Give it any name, and any extension or none. Use the current default name - 'src.txt' - to avoid passing an argument later.
 
-Write your scripts.
+Add the scripts to the file.
 
-Immediately above each script, add a tag line starting by default `###`. Include in the tag line the following elements:
+Immediately above each script, insert a tag line starting by default `###`. Include in the tag line the following elements:
 
 - the file extension for that language, or the full output filename including extension, or the full output path including directory and extension
 - the command to run the file, if any
@@ -41,6 +44,8 @@ For example, a possible tag line for a script in Elixir:
 ```
 
 This tells aliesce to save the script following the tag line in a file with the `exs` extension, then run that with the `elixir` command, applying one option, to require a file named 'setup'.
+
+Scripts written in other files can be appended via the command line (see [Options](#options) below).
 
 ### Output paths
 
@@ -100,6 +105,7 @@ The following can be passed to `aliesce` before any source file name:
 
 - `--list` / `-l`, to print for each script in the source file its number and tag line label and data, skipping the save and run stages
 - `--only` / `-o  NUMBER`, to include only script no. NUMBER
+- `--push` / `-p  LINE FILE`, to append to the source file LINE, auto-prefixed with a tag, followed by the content of FILE
 - `--help` / `-h`, to show usage and a list of available flags then exit
 
 ## Getting started
@@ -133,9 +139,10 @@ The following are the expected next steps in the development of the code base. T
 - provide tag line options for:
   - multiple save paths
   - auxiliary commands
-- provide CLI options for:
+- provide or extend CLI options for:
   - output verbosity
-  - importing scripts
+  - importing a script to an arbitrary position
+  - running a subset of scripts of any size
 - refactor as more idiomatic
 - improve error handling
-- add fuller testing
+- extend test module

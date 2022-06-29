@@ -5,19 +5,33 @@ use std::collections::HashMap;
 
 /* define data structures */
 
+struct Settings<'a> {
+  src: &'a str,
+  tag: (&'a str, &'a str),
+  dir: &'a str
+}
+
+/* - for CLI options */
+
 #[derive(PartialEq, Eq)]
 enum CLIOptVal {
   Bool(bool),
   Int(usize)
 }
 
+type CLIOptValMap = HashMap<String, CLIOptVal>;
+
+type CLIOptCall = dyn Fn(&Settings, &[CLIOpt], CLIOptValMap, Vec<String>) -> CLIOptValMap;
+
 struct CLIOpt {
   word: String,
   char: String,
-  vals: Vec<String>,
+  strs: Vec<String>,
   desc: String,
-  call: Box<dyn Fn((&str, (&str, &str), &str), &[CLIOpt], HashMap<String, CLIOptVal>, Vec<String>) -> HashMap<String, CLIOptVal>>
+  call: Box<CLIOptCall>
 }
+
+/* - for parsed output */
 
 #[derive(Debug, PartialEq)]
 struct OutputPath {
@@ -37,11 +51,11 @@ struct Output {
 
 /* define utility functions */
 
-fn get_cli_option(word: &str, char: &str, vals: &[&str], desc: &str, call: &'static dyn Fn((&str, (&str, &str), &str), &[CLIOpt], HashMap<String, CLIOptVal>, Vec<String>) -> HashMap<String, CLIOptVal>) -> CLIOpt {
+fn get_cli_option(word: &str, char: &str, val_strs: &[&str], desc: &str, call: &'static CLIOptCall) -> CLIOpt {
   CLIOpt {
     word: String::from(word),
     char: String::from(char),
-    vals: if vals.len() > 0 { vals.iter().map(|&val|String::from(val)).collect::<Vec<String>>() } else { Vec::new() },
+    strs: if val_strs.len() > 0 { val_strs.iter().map(|&val_str|String::from(val_str)).collect::<Vec<String>>() } else { Vec::new() },
     desc: String::from(desc),
     call: Box::new(call)
   }
@@ -49,40 +63,39 @@ fn get_cli_option(word: &str, char: &str, vals: &[&str], desc: &str, call: &'sta
 
 /* define CLI option applicators */
 
-fn apply_cli_option_list(_0: (&str, (&str, &str), &str), _1: &[CLIOpt], mut opts_values: HashMap<String, CLIOptVal>, _2: Vec<String>) -> HashMap<String, CLIOptVal> {
+fn apply_cli_option_list(_0: &Settings, _1: &[CLIOpt], mut opts_values: CLIOptValMap, _2: Vec<String>) -> CLIOptValMap {
   opts_values.insert( "is_list".to_string(), CLIOptVal::Bool(false) );
   opts_values
 }
 
-fn apply_cli_option_only(_0: (&str, (&str, &str), &str), _1: &[CLIOpt], mut opts_values: HashMap<String, CLIOptVal>, vals: Vec<String>) -> HashMap<String, CLIOptVal> {
-  let val = vals[0].trim().parse::<usize>().expect("parse script number for option 'only'");
-  opts_values.insert("script_no".to_string(), CLIOptVal::Int(val));
+fn apply_cli_option_only(_0: &Settings, _1: &[CLIOpt], mut opts_values: CLIOptValMap, strs: Vec<String>) -> CLIOptValMap {
+  let val_str = strs[0].trim().parse::<usize>().expect("parse script number for option 'only'");
+  opts_values.insert("script_no".to_string(), CLIOptVal::Int(val_str));
   opts_values
 }
 
-fn apply_cli_option_push(settings: (&str, (&str, &str), &str), _0: &[CLIOpt], _1: HashMap<String, CLIOptVal>, vals: Vec<String>) -> HashMap<String, CLIOptVal> {
+fn apply_cli_option_push(settings: &Settings, _0: &[CLIOpt], _1: CLIOptValMap, strs: Vec<String>) -> CLIOptValMap {
 
-  use std::io::Write;
-
-  let script_filename = &vals[1];
-  let (src, tag, _) = settings;
+  let script_filename = &strs[1];
+  let Settings { src, tag, dir: _ } = settings;
 
   let script = fs::read_to_string(script_filename).expect(&format!("read script file '{}'", script_filename));
-  let script_plus_tag_line = format!("\n{} {}\n\n{}", tag.0, vals[0], script.trim());
+  let script_plus_tag_line = format!("\n{} {}\n\n{}", tag.0, strs[0], script);
 
+  use std::io::Write;
   let mut file = fs::OpenOptions::new().append(true).open(src).unwrap();
-  writeln!(file, "{}", script_plus_tag_line).expect("append script to source file");
+  file.write(&script_plus_tag_line.into_bytes()).expect("append script to source file");
 
   process::exit(0);
 }
 
-fn apply_cli_option_help(_0: (&str, (&str, &str), &str), cli_options: &[CLIOpt], _1: HashMap<String, CLIOptVal>, _2: Vec<String>) -> HashMap<String, CLIOptVal> {
+fn apply_cli_option_help(_0: &Settings, cli_options: &[CLIOpt], _1: CLIOptValMap, _2: Vec<String>) -> CLIOptValMap {
 
-  let usage = "Usage: aliesce [--help/-h / [--list/-l] [--only/-o NUMBER] [--push/-p TAG_LINE FILENAME] [src]]";
+  let usage = "Usage: aliesce [--help/-h / [--list/-l] [--only/-o NUMBER] [--push/-p LINE FILE] [src]]";
 
   /* set value substrings and max length */
   let val_strs = cli_options.iter()
-    .map(|cli_option|format!("{}", cli_option.vals.join(" ")))
+    .map(|cli_option|format!("{}", cli_option.strs.join(" ")))
     .collect::<Vec<String>>();
   let val_strs_max = val_strs.iter()
     .fold(0, |acc, val_str| if val_str.len() > acc { val_str.len() } else { acc });
@@ -106,7 +119,7 @@ fn main() {
   let cli_options = [
     get_cli_option("list", "l", &[], "print for each script in the source file its number and tag line label and data, skipping the save and run stages", &apply_cli_option_list),
     get_cli_option("only", "o", &["NUMBER"], "include only script no. NUMBER", &apply_cli_option_only),
-    get_cli_option("push", "p", &["TAG_LINE", "FILENAME"], "append TAG_LINE and the content of FILENAME to the source file", &apply_cli_option_push),
+    get_cli_option("push", "p", &["LINE", "FILE"], "append to the source file LINE, auto-prefixed with a tag, followed by the content of FILE", &apply_cli_option_push),
     get_cli_option("help", "h", &[], "show usage and a list of available flags then exit", &apply_cli_option_help)
   ];
 
@@ -123,10 +136,10 @@ fn main() {
     for i in 0..cli_options.len() {
       for j in 1..args_count {
         if "--".to_owned() + &cli_options[i].word == args[j] || "-".to_owned() + &cli_options[i].char == args[j] {
-          let vals_len = cli_options[i].vals.len();
-          let vals = args[(j + 1)..(j + vals_len + 1)].to_vec();
-          opts_queued.push((&cli_options[i].call, vals));
-          opts_count = opts_count + 1 + vals_len;
+          let strs_len = cli_options[i].strs.len();
+          let strs = args[(j + 1)..(j + strs_len + 1)].to_vec();
+          opts_queued.push((&cli_options[i].call, strs));
+          opts_count = opts_count + 1 + strs_len;
         };
       };
     };
@@ -134,32 +147,37 @@ fn main() {
   args_count = args_count - opts_count;
 
   /* set source filename (incl. output basename), script tag and output directory */
-  let src = if args_count > 1 { &args.last().unwrap() } else { "src.txt" };
-  let tag = ("###", "#");
-  let dir = "scripts";
+  let settings = Settings {
+    src: if args_count > 1 { &args.last().unwrap() } else { "src.txt" },
+    tag: ("###", "#"),
+    dir: "scripts"
+  };
 
   /* make any queued option calls */
   let mut opts_values = HashMap::new();
   if opts_queued.len() > 0 {
     for i in 0..opts_queued.len() {
-      let (call, vals) = &opts_queued[i];
-      opts_values = call((src, tag, dir), &cli_options, opts_values, vals.to_vec());
+      let (call, strs) = &opts_queued[i];
+      opts_values = call(&settings, &cli_options, opts_values, strs.to_vec());
     }
   }
 
   /* implement */
 
   /* get each script incl. tag line part, handle tag line, save and run */
-  fs::read_to_string(src).expect(&format!("read source file '{}'", src))
-    .split(tag.0)
+  fs::read_to_string(settings.src).expect(&format!("read source file '{}'", settings.src))
+    .split(settings.tag.0)
     .skip(1) /* omit content preceding initial tag */
     .enumerate() /* yield also index (i) */
     .filter(|(i, _)| !opts_values.contains_key("script_no") || opts_values.get("script_no").unwrap() == &CLIOptVal::Int(i + 1) )
-    .map(|(i, script_plus_tag_line_part)| parse(script_plus_tag_line_part, tag.1, dir, src, i, &opts_values))
+    .map(|(i, script_plus_tag_line_part)| parse(script_plus_tag_line_part, &settings, i, &opts_values))
     .for_each(apply)
 }
 
-fn parse<'a>(script_plus_tag_line_part: &'a str, tag_1: &str, dir: &str, src: &str, i: usize, opts_values: &HashMap<String, CLIOptVal>) -> Option<Output> {
+fn parse<'a>(script_plus_tag_line_part: &'a str, settings: &Settings, i: usize, opts_values: &CLIOptValMap) -> Option<Output> {
+
+  let Settings { src, tag, dir } = settings;
+  let tag_1 = tag.1;
 
   let mut lines = script_plus_tag_line_part.lines();
   let tag_line_part = lines.nth(0).unwrap().trim();
@@ -202,7 +220,7 @@ fn parse<'a>(script_plus_tag_line_part: &'a str, tag_1: &str, dir: &str, src: &s
   /* set as dir either remaining output path parts recombined or default dir */
   let dir = if parts_path.len() > 0 { parts_path.join("/") } else { dir.to_string() };
   /* set as basename either all but last output filename part or src basename */
-  let basename = if p_f_len > 1 { parts_filename[0..(p_f_len - 1)].join(".") } else { src.split(".").nth(0).unwrap().to_string() };
+  let basename = if p_f_len > 1 { parts_filename[..(p_f_len - 1)].join(".") } else { src.split(".").nth(0).unwrap().to_string() };
   /* set as ext last output filename part */
   let ext = parts_filename.iter().last().unwrap().to_string();
 
@@ -265,14 +283,20 @@ fn apply(output: Option<Output>) {
 mod test {
 
   use::std::collections::HashMap;
-  use super::{ CLIOptVal, OutputPath, Output, parse };
+  use super::{ Settings, CLIOptVal, CLIOptValMap, OutputPath, Output, parse };
 
-  fn get_values_parse() -> (&'static str, &'static str, &'static str, usize, String, Vec<String>, String, OutputPath, HashMap<String, CLIOptVal>) {
+  fn get_values_parse() -> (Settings<'static>, usize, String, Vec<String>, String, OutputPath, CLIOptValMap) {
 
-    let dir_default_str = "scripts";
     let src_default_str = "src.txt";
     let src_basename_default_str = src_default_str.split(".").nth(0).unwrap();
-    let tag_1_default = "#";
+    let tag_default = ("###", "#");
+    let dir_default_str = "scripts";
+
+    let settings_default = Settings {
+      src: src_default_str,
+      tag: tag_default,
+      dir: dir_default_str
+    };
 
     let opts_values_default = HashMap::new();
 
@@ -289,17 +313,17 @@ mod test {
       ext
     };
 
-    (dir_default_str, src_default_str, tag_1_default, index, prog, args, code, output_path, opts_values_default)
+    (settings_default, index, prog, args, code, output_path, opts_values_default)
   }
 
   #[test]
   fn parse_returns_for_tag_data_full_some_output() {
 
-    let (dir_default_str, src_default_str, tag_1_default, i, prog, args, code, path, opts_values_default) = get_values_parse();
+    let (settings_default, i, prog, args, code, path, opts_values_default) = get_values_parse();
     let script_plus_tag_line_part = " ext program --flag value\n\n//code";
 
     let expected = Option::Some(Output { code, path, prog, args, i });
-    let obtained = parse(script_plus_tag_line_part, tag_1_default, dir_default_str, src_default_str, i, &opts_values_default);
+    let obtained = parse(script_plus_tag_line_part, &settings_default, i, &opts_values_default);
 
     assert_eq!(expected, obtained);
   }
@@ -307,11 +331,11 @@ mod test {
   #[test]
   fn parse_returns_for_tag_label_and_data_full_some_output() {
 
-    let (dir_default_str, src_default_str, tag_1_default, i, prog, args, code, path, opts_values_default) = get_values_parse();
+    let (settings_default, i, prog, args, code, path, opts_values_default) = get_values_parse();
     let script_plus_tag_line_part = " label # ext program --flag value\n\n//code";
 
     let expected = Option::Some(Output { code, path, prog, args, i });
-    let obtained = parse(script_plus_tag_line_part, tag_1_default, dir_default_str, src_default_str, i, &opts_values_default);
+    let obtained = parse(script_plus_tag_line_part, &settings_default, i, &opts_values_default);
 
     assert_eq!(expected, obtained);
   }
@@ -319,14 +343,14 @@ mod test {
   #[test]
   fn parse_returns_for_list_option_none() {
 
-    let (dir_default_str, src_default_str, tag_1_default, i, _, _, _, _, _) = get_values_parse();
+    let (settings_default, i, _, _, _, _, _) = get_values_parse();
     let script_plus_tag_line_part = " ext program --flag value\n\n//code";
 
     let mut opts_values_default = HashMap::new();
     opts_values_default.insert("is_list".to_string(), CLIOptVal::Bool(true));
 
     let expected = Option::None;
-    let obtained = parse(script_plus_tag_line_part, tag_1_default, dir_default_str, src_default_str, i, &opts_values_default);
+    let obtained = parse(script_plus_tag_line_part, &settings_default, i, &opts_values_default);
 
     assert_eq!(expected, obtained);
   }
@@ -334,16 +358,16 @@ mod test {
   #[test]
   fn parse_returns_for_tag_data_full_incl_singlepart_output_basename_some_output() {
 
-    let (dir_default_str, src_default_str, tag_1_default, i, prog, args, code, _, opts_values_default) = get_values_parse();
+    let (settings_default, i, prog, args, code, _, opts_values_default) = get_values_parse();
     let script_plus_tag_line_part = " script.ext program --flag value\n\n//code";
 
-    let dir = String::from(dir_default_str);
+    let dir = String::from(settings_default.dir);
     let basename = String::from("script");
     let ext = String::from("ext");
     let path = OutputPath { dir, basename, ext };
 
     let expected = Option::Some(Output { code, path, prog, args, i });
-    let obtained = parse(script_plus_tag_line_part, tag_1_default, dir_default_str, src_default_str, i, &opts_values_default);
+    let obtained = parse(script_plus_tag_line_part, &settings_default, i, &opts_values_default);
 
     assert_eq!(expected, obtained);
   }
@@ -351,16 +375,16 @@ mod test {
   #[test]
   fn parse_returns_for_tag_data_full_incl_multipart_output_basename_some_output() {
 
-    let (dir_default_str, src_default_str, tag_1_default, i, prog, args, code, _, opts_values_default) = get_values_parse();
+    let (settings_default, i, prog, args, code, _, opts_values_default) = get_values_parse();
     let script_plus_tag_line_part = " script.suffix1.suffix2.ext program --flag value\n\n//code";
 
-    let dir = String::from(dir_default_str);
+    let dir = String::from(settings_default.dir);
     let basename = String::from("script.suffix1.suffix2");
     let ext = String::from("ext");
     let path = OutputPath { dir, basename, ext };
 
     let expected = Option::Some(Output { code, path, prog, args, i });
-    let obtained = parse(script_plus_tag_line_part, tag_1_default, dir_default_str, src_default_str, i, &opts_values_default);
+    let obtained = parse(script_plus_tag_line_part, &settings_default, i, &opts_values_default);
 
     assert_eq!(expected, obtained);
   }
@@ -368,7 +392,7 @@ mod test {
   #[test]
   fn parse_returns_for_tag_data_full_incl_output_dir_some_output() {
 
-    let (dir_default_str, src_default_str, tag_1_default, i, prog, args, code, _, opts_values_default) = get_values_parse();
+    let (settings_default, i, prog, args, code, _, opts_values_default) = get_values_parse();
     let script_plus_tag_line_part = " dir/script.ext program --flag value\n\n//code";
 
     let dir = String::from("dir");
@@ -377,7 +401,7 @@ mod test {
     let path = OutputPath { dir, basename, ext };
 
     let expected = Option::Some(Output { code, path, prog, args, i });
-    let obtained = parse(script_plus_tag_line_part, tag_1_default, dir_default_str, src_default_str, i, &opts_values_default);
+    let obtained = parse(script_plus_tag_line_part, &settings_default, i, &opts_values_default);
 
     assert_eq!(expected, obtained);
   }
@@ -385,7 +409,7 @@ mod test {
   #[test]
   fn parse_returns_for_tag_data_minus_cmd_some_output_indicating() {
 
-    let (dir_default_str, src_default_str, tag_1_default, i, _, _, code, path, opts_values_default) = get_values_parse();
+    let (settings_default, i, _, _, code, path, opts_values_default) = get_values_parse();
     let script_plus_tag_line_part = " ext\n\n//code";
 
     let expected = Option::Some(Output {
@@ -395,7 +419,7 @@ mod test {
       i
     });
 
-    let obtained = parse(script_plus_tag_line_part, tag_1_default, dir_default_str, src_default_str, i, &opts_values_default);
+    let obtained = parse(script_plus_tag_line_part, &settings_default, i, &opts_values_default);
 
     assert_eq!(expected, obtained);
   }
@@ -403,11 +427,11 @@ mod test {
   #[test]
   fn parse_returns_for_tag_data_full_with_bypass_none() {
 
-    let (dir_default_str, src_default_str, tag_1_default, i, _, _, _, _, opts_values_default) = get_values_parse();
+    let (settings_default, i, _, _, _, _, opts_values_default) = get_values_parse();
     let script_plus_tag_line_part = " ! ext program --flag value\n\n//code";
 
     let expected = Option::None;
-    let obtained = parse(script_plus_tag_line_part, tag_1_default, dir_default_str, src_default_str, i, &opts_values_default);
+    let obtained = parse(script_plus_tag_line_part, &settings_default, i, &opts_values_default);
 
     assert_eq!(expected, obtained);
   }
@@ -415,11 +439,11 @@ mod test {
   #[test]
   fn parse_returns_for_tag_data_absent_none() {
 
-    let (dir_default_str, src_default_str, tag_1_default, i, _, _, _, _, opts_values_default) = get_values_parse();
+    let (settings_default, i, _, _, _, _, opts_values_default) = get_values_parse();
     let script_plus_tag_line_part = "\n\n//code";
 
     let expected = Option::None;
-    let obtained = parse(script_plus_tag_line_part, tag_1_default, dir_default_str, src_default_str, i, &opts_values_default);
+    let obtained = parse(script_plus_tag_line_part, &settings_default, i, &opts_values_default);
 
     assert_eq!(expected, obtained);
   }

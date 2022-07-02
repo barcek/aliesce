@@ -21,9 +21,9 @@ For smoother development of related code, to keep the source about as closely co
 
 ## How?
 
-By providing a simple tag line above each script containing values to be used in the handling.
+By providing a simple tag line above each script containing values to be used in saving and running it.
 
-## Source file setup
+### Source file setup
 
 Create a file for your scripts. Give it any name, and any extension or none. Use the current default name - 'src.txt' - to avoid passing an argument later.
 
@@ -104,8 +104,8 @@ To add a label to a script, include it after the tag head and follow it with the
 The following can be passed to `aliesce` before any source file name:
 
 - `--list` / `-l`, to print for each script in the source file its number and tag line label and data, skipping the save and run stages
-- `--only` / `-o  NUMBER`, to include only script no. NUMBER
-- `--push` / `-p  LINE FILE`, to append to the source file LINE, auto-prefixed with a tag, followed by the content of FILE
+- `--only` / `-o`  `NUMBER`, to include only script no. `NUMBER`
+- `--push` / `-p`  `LINE` `FILE`, to append to the source file `LINE`, auto-prefixed with a tag, followed by the content of `FILE`
 - `--help` / `-h`, to show usage and a list of available flags then exit
 
 ## Getting started

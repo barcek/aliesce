@@ -89,7 +89,7 @@ To save the script but avoid the run stage, include the `!` character as an elem
 ### script.exs ! elixir -r setup
 ```
 
-Alternatively, a single specified script can be included (see [Options](#options) below), to avoid the need to add tag line elements to others.
+Alternatively, a specific subset of scripts can be included (see [Options](#options) below), to avoid the need to add tag line elements to others.
 
 ### Labelling scripts
 
@@ -104,7 +104,7 @@ To add a label to a script, include it after the tag head and follow it with the
 The following can be passed to `aliesce` before any source file name:
 
 - `--list` / `-l`, to print for each script in the source file its number and tag line label and data, skipping the save and run stages
-- `--only` / `-o`  `NUMBER`, to include only script no. `NUMBER`
+- `--only` / `-o`  `SUBSET`, to include only scripts the numbers of which appear in `SUBSET`, comma-separated
 - `--push` / `-p`  `LINE` `FILE`, to append to the source file `LINE`, auto-prefixed with a tag, followed by the content of `FILE`
 - `--help` / `-h`, to show usage and a list of available flags then exit
 

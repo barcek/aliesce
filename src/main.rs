@@ -92,23 +92,30 @@ fn apply_cli_option_push(config: &Config, _0: &[CLIOpt], strs: Vec<String>) -> (
 
 fn apply_cli_option_help(_0: &Config, cli_options: &[CLIOpt], _2: Vec<String>) -> (String, CLIOptVal) {
 
-  let usage = "Usage: aliesce [--help/-h / [--list/-l] [--only/-o SUBSET] [--push/-p LINE FILE] [src]]";
-
   /* set value substrings and max length */
   let val_strs = cli_options.iter()
-    .map(|cli_option|format!("{}", cli_option.strs.join(" ")))
+    .map(|cli_option| format!("{}", cli_option.strs.join(" ")))
     .collect::<Vec<String>>();
   let val_strs_max = val_strs.iter()
     .fold(0, |acc, val_str| if val_str.len() > acc { val_str.len() } else { acc });
 
-  /* generate list of flags */
+  /* generate usage line */
+  let usage_part = cli_options.iter()
+    .filter(|cli_option| cli_option.word != "help") /* avoid duplication */
+    .enumerate() /* yield also index (i) */
+    .map(|(i, cli_option)| format!("[--{}/-{}{}]", cli_option.word, cli_option.char, if val_strs.len() == 0 { "".to_owned() } else { " ".to_owned() + &val_strs[i] }))
+    .collect::<Vec<String>>()
+    .join(" ");
+  let usage_line = format!("Usage: aliesce [--help/-h / {} [src]]", usage_part);
+
+  /* generate flags list */
   let flags_list = cli_options.iter()
     .enumerate() /* yield also index (i) */
-    .map(|(i, cli_option)|format!(" -{}, --{}  {:w$}  {}", cli_option.char, cli_option.word, val_strs[i], cli_option.desc, w = val_strs_max))
+    .map(|(i, cli_option)| format!(" -{}, --{}  {:w$}  {}", cli_option.char, cli_option.word, val_strs[i], cli_option.desc, w = val_strs_max))
     .collect::<Vec<String>>()
     .join("\n");
 
-  println!("{}\n{}\n{}", usage, String::from("Flags:"), flags_list);
+  println!("{}\n{}\n{}", usage_line, String::from("Flags:"), flags_list);
   process::exit(0);
 }
 
@@ -117,7 +124,7 @@ fn get_config() -> Config<'static> {
   /* set CLI options */
   let cli_options = [
     get_cli_option("list", "l", &[], "print for each script in the source file its number and tag line label and data, skipping the save and run stages", &apply_cli_option_list),
-    get_cli_option("only", "o", &["SUBSET"], "include only scripts indicated in comma-separated SUBSET of script numbers", &apply_cli_option_only),
+    get_cli_option("only", "o", &["SUBSET"], "include only scripts the numbers of which appear in SUBSET, comma-separated", &apply_cli_option_only),
     get_cli_option("push", "p", &["LINE", "FILE"], "append to the source file LINE, auto-prefixed with a tag, followed by the content of FILE", &apply_cli_option_push),
     get_cli_option("help", "h", &[], "show usage and a list of available flags then exit", &apply_cli_option_help)
   ];

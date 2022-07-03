@@ -16,7 +16,7 @@ struct Settings<'a> {
 #[derive(PartialEq, Eq)]
 enum CLIOptVal {
   Bool(bool),
-  Int(usize)
+  Ints(Vec<usize>)
 }
 
 type CLIOptValMap = HashMap<String, CLIOptVal>;
@@ -69,8 +69,10 @@ fn apply_cli_option_list(_0: &Settings, _1: &[CLIOpt], mut opts_values: CLIOptVa
 }
 
 fn apply_cli_option_only(_0: &Settings, _1: &[CLIOpt], mut opts_values: CLIOptValMap, strs: Vec<String>) -> CLIOptValMap {
-  let val_str = strs[0].trim().parse::<usize>().expect("parse script number for option 'only'");
-  opts_values.insert("script_no".to_string(), CLIOptVal::Int(val_str));
+  let val_ints = strs[0].trim().split(",")
+    .map(|val_str|val_str.trim().parse::<usize>().expect("parse script number for option 'only'"))
+    .collect::<Vec<usize>>();
+  opts_values.insert("script_nos".to_string(), CLIOptVal::Ints(val_ints));
   opts_values
 }
 
@@ -91,7 +93,7 @@ fn apply_cli_option_push(settings: &Settings, _0: &[CLIOpt], _1: CLIOptValMap, s
 
 fn apply_cli_option_help(_0: &Settings, cli_options: &[CLIOpt], _1: CLIOptValMap, _2: Vec<String>) -> CLIOptValMap {
 
-  let usage = "Usage: aliesce [--help/-h / [--list/-l] [--only/-o NUMBER] [--push/-p LINE FILE] [src]]";
+  let usage = "Usage: aliesce [--help/-h / [--list/-l] [--only/-o SUBSET] [--push/-p LINE FILE] [src]]";
 
   /* set value substrings and max length */
   let val_strs = cli_options.iter()
@@ -118,7 +120,7 @@ fn main() {
   /* set CLI options */
   let cli_options = [
     get_cli_option("list", "l", &[], "print for each script in the source file its number and tag line label and data, skipping the save and run stages", &apply_cli_option_list),
-    get_cli_option("only", "o", &["NUMBER"], "include only script no. NUMBER", &apply_cli_option_only),
+    get_cli_option("only", "o", &["SUBSET"], "include only scripts indicated in comma-separated SUBSET of script numbers", &apply_cli_option_only),
     get_cli_option("push", "p", &["LINE", "FILE"], "append to the source file LINE, auto-prefixed with a tag, followed by the content of FILE", &apply_cli_option_push),
     get_cli_option("help", "h", &[], "show usage and a list of available flags then exit", &apply_cli_option_help)
   ];
@@ -169,7 +171,10 @@ fn main() {
     .split(settings.tag.0)
     .skip(1) /* omit content preceding initial tag */
     .enumerate() /* yield also index (i) */
-    .filter(|(i, _)| !opts_values.contains_key("script_no") || opts_values.get("script_no").unwrap() == &CLIOptVal::Int(i + 1) )
+    .filter(|(i, _)| !opts_values.contains_key("script_nos") || match opts_values.get("script_nos").unwrap() { /* account for only option */
+      CLIOptVal::Ints(val_ints) => val_ints.contains(&(i + 1)),
+      _ => false
+    })
     .map(|(i, script_plus_tag_line_part)| parse(script_plus_tag_line_part, &settings, i, &opts_values))
     .for_each(apply)
 }

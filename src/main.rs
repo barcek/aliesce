@@ -69,9 +69,12 @@ fn apply_cli_option_list(_0: &Config, _1: &[CLIOpt], _2: Vec<String>) -> (String
 }
 
 fn apply_cli_option_only(_0: &Config, _1: &[CLIOpt], strs: Vec<String>) -> (String, CLIOptVal) {
-  let val_ints = strs[0].trim().split(",")
-    .map(|val_str|val_str.trim().parse::<usize>().expect("parse script number for option 'only'"))
-    .collect::<Vec<usize>>();
+  let val_ints: Vec<usize> = strs[0].trim().split(",")
+    .flat_map(|val_str| {
+      let vals: Vec<usize> = val_str.trim().split("-").map(|item| item.parse::<usize>().expect("parse subset for option 'only'")).collect();
+      if vals.len() > 1 { (vals[0]..(vals[1] + 1)).collect::<Vec<usize>>() } else { vals }
+    })
+    .collect();
   ("script_nos".to_string(), CLIOptVal::Ints(val_ints))
 }
 
@@ -124,7 +127,7 @@ fn get_config() -> Config<'static> {
   /* set CLI options */
   let cli_options = [
     get_cli_option("list", "l", &[], "print for each script in the source file its number and tag line label and data, skipping the save and run stages", &apply_cli_option_list),
-    get_cli_option("only", "o", &["SUBSET"], "include only scripts the numbers of which appear in SUBSET, comma-separated", &apply_cli_option_only),
+    get_cli_option("only", "o", &["SUBSET"], "include only scripts the numbers of which appear in SUBSET, comma-separated and/or in dash-indicated ranges, e.g. -o 1,3-5", &apply_cli_option_only),
     get_cli_option("push", "p", &["LINE", "FILE"], "append to the source file LINE, auto-prefixed with a tag, followed by the content of FILE", &apply_cli_option_push),
     get_cli_option("help", "h", &[], "show usage and a list of available flags then exit", &apply_cli_option_help)
   ];

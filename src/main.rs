@@ -195,17 +195,16 @@ fn parse<'a>(script_plus_tag_line_part: &'a str, config: &Config, i: usize) -> O
   let tag_1 = tag.1;
 
   let mut lines = script_plus_tag_line_part.lines();
-  let tag_line_part = lines.nth(0).unwrap().trim();
+  let tag_line_part = lines.nth(0).unwrap();
 
   /* get label and data from tag line */
   let tag_line_subparts = match tag_line_part.find(tag_1) { Some(i) => tag_line_part.split_at(i + 1), None => ("", tag_line_part) };
-  let tag_line_label = tag_line_subparts.0.split(tag_1).nth(0).unwrap().trim();
+  let tag_line_label = tag_line_subparts.0.split(tag_1).nth(0).unwrap(); /* untrimmed */
   let tag_line_data = tag_line_subparts.1.trim();
 
   /* handle option selected - list */
   if opt_vals.contains_key("is_list") {
-    let tag_line_part_new = if tag_line_label.len() > 0 { format!("{}: {}", tag_line_label, tag_line_data) } else { tag_line_data.to_string() };
-    println!("{}: {}", i + 1, tag_line_part_new);
+    println!("{}:{} {}", i + 1, if tag_line_label.len() > 0 { [tag_line_label, ":"].concat() } else { "".to_string() }, tag_line_data);
     return None;
   };
 

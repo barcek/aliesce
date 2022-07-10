@@ -99,12 +99,14 @@ To add a label to a script, include it after the tag head and follow it with the
 ### script label # script.exs elixir -r setup
 ```
 
+Spacing between tag head and tail is retained for list entries (see [Options](#options) below).
+
 ## Options
 
 The following can be passed to `aliesce` before any source file name:
 
 - `--list` / `-l`, to print for each script in the source file its number and tag line label and data, skipping the save and run stages
-- `--only` / `-o`  `SUBSET`, to include only scripts the numbers of which appear in `SUBSET`, comma-separated
+- `--only` / `-o`  `SUBSET`, to include only scripts the numbers of which appear in `SUBSET`, comma-separated and/or in dash-indicated ranges, e.g. `-o 1,3-5`
 - `--push` / `-p`  `LINE` `FILE`, to append to the source file `LINE`, auto-prefixed with a tag, followed by the content of `FILE`
 - `--help` / `-h`, to show usage and a list of available flags then exit
 
@@ -141,8 +143,9 @@ The following are the expected next steps in the development of the code base. T
   - auxiliary commands
 - provide or extend CLI options for:
   - output verbosity
+  - applying a single stage
+  - listing output paths only
   - importing a script to an arbitrary position
-  - running a subset of scripts of any size
 - refactor as more idiomatic
 - improve error handling
 - extend test module

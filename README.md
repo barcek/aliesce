@@ -5,10 +5,11 @@ Write, save and run scripts in multiple languages from a single source file.
 - [Why..?](#why)
 - [How..?](#how)
   - [Source file setup](#source-file-setup)
-  - [Output paths](#output-paths)
   - [Running aliesce](#running-aliesce)
-  - [Avoiding stages](#avoiding-stages)
-  - [Labelling scripts](#labelling-scripts)
+  - [There's more...](#theres-more)
+    - [Specifying paths](#specifying-paths)
+    - [Avoiding stages](#avoiding-stages)
+    - [Labelling scripts](#labelling-scripts)
 - [Options](#options)
 - [Getting started](#getting-started)
 - [Making changes](#making-changes)
@@ -47,7 +48,21 @@ This tells aliesce to save the script following the tag line in a file with the 
 
 Scripts written in other files can be appended via the command line (see [Options](#options) below).
 
-### Output paths
+### Running aliesce
+
+If aliesce is compiled and ready to go (see [Getting started](#getting-started) below), run the `aliesce` command, adding the source file name if not the default.
+
+For example, for a source file named only 'src':
+
+```shell
+aliesce src
+```
+
+The script files are saved and run in order of appearance in the source file.
+
+### There's more...
+
+#### Specifying paths
 
 The basename of the output file will be the basename of the source file, i.e. 'src' by default. The file is saved by default to a folder in the current directory named `scripts`, which is created if not present.
 
@@ -63,19 +78,7 @@ For an output directory named 'output' holding 'script.exs':
 ### output/script.exs elixir -r setup
 ```
 
-### Running aliesce
-
-If aliesce is compiled and ready to go (see [Getting started](#getting-started) below), run the `aliesce` command, adding the source file name if not the default.
-
-For example, for a source file named only 'src':
-
-```shell
-aliesce src
-```
-
-The script files are saved and run in order of appearance in the source file.
-
-### Avoiding stages
+#### Avoiding stages
 
 To avoid a script being saved and run, simply include the `!` character as a tag line element, before the extension or full output filename or path:
 
@@ -91,7 +94,7 @@ To save the script but avoid the run stage, include the `!` character as an elem
 
 Alternatively, a specific subset of scripts can be included (see [Options](#options) below), to avoid the need to add tag line elements to others.
 
-### Labelling scripts
+#### Labelling scripts
 
 To add a label to a script, include it after the tag head and follow it with the tag tail, which is `#` by default:
 

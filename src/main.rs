@@ -16,13 +16,13 @@ struct Config<'a> {
 
 #[derive(PartialEq, Eq)]
 enum CLIOptVal {
-  Bool(bool),
+  Bool,
   Ints(Vec<usize>)
 }
 
 type CLIOptValMap = HashMap<String, CLIOptVal>;
 
-type CLIOptCall = dyn Fn(&Config, &[CLIOpt], Vec<String>) -> (String, CLIOptVal);
+type CLIOptCall = dyn Fn(&Config, &[CLIOpt], Vec<String>) -> CLIOptVal;
 
 struct CLIOpt {
   word: String,
@@ -64,21 +64,21 @@ fn get_cli_option(word: &str, char: &str, val_strs: &[&str], desc: &str, call: &
 
 /* define CLI option applicators */
 
-fn apply_cli_option_list(_0: &Config, _1: &[CLIOpt], _2: Vec<String>) -> (String, CLIOptVal) {
-  ("is_list".to_string(), CLIOptVal::Bool(false))
+fn apply_cli_option_list(_0: &Config, _1: &[CLIOpt], _2: Vec<String>) -> CLIOptVal {
+  CLIOptVal::Bool
 }
 
-fn apply_cli_option_only(_0: &Config, _1: &[CLIOpt], strs: Vec<String>) -> (String, CLIOptVal) {
+fn apply_cli_option_only(_0: &Config, _1: &[CLIOpt], strs: Vec<String>) -> CLIOptVal {
   let val_ints: Vec<usize> = strs[0].trim().split(",")
     .flat_map(|val_str| {
       let vals: Vec<usize> = val_str.trim().split("-").map(|item| item.parse::<usize>().expect("parse subset for option 'only'")).collect();
       if vals.len() > 1 { (vals[0]..(vals[1] + 1)).collect::<Vec<usize>>() } else { vals }
     })
     .collect();
-  ("script_nos".to_string(), CLIOptVal::Ints(val_ints))
+  CLIOptVal::Ints(val_ints)
 }
 
-fn apply_cli_option_push(config: &Config, _0: &[CLIOpt], strs: Vec<String>) -> (String, CLIOptVal) {
+fn apply_cli_option_push(config: &Config, _0: &[CLIOpt], strs: Vec<String>) -> CLIOptVal {
 
   let script_filename = &strs[1];
   let Config { src, tag, dir: _, opt_vals: _ } = config;
@@ -93,7 +93,7 @@ fn apply_cli_option_push(config: &Config, _0: &[CLIOpt], strs: Vec<String>) -> (
   process::exit(0);
 }
 
-fn apply_cli_option_help(_0: &Config, cli_options: &[CLIOpt], _2: Vec<String>) -> (String, CLIOptVal) {
+fn apply_cli_option_help(_0: &Config, cli_options: &[CLIOpt], _2: Vec<String>) -> CLIOptVal {
 
   /* set value substrings and max length */
   let val_strs = cli_options.iter()
@@ -145,7 +145,7 @@ fn get_config() -> Config<'static> {
         if "--".to_owned() + &cli_options[i].word == args[j] || "-".to_owned() + &cli_options[i].char == args[j] {
           let strs_len = cli_options[i].strs.len();
           let strs = args[(j + 1)..(j + strs_len + 1)].to_vec();
-          opts_queued.push((&cli_options[i].call, strs));
+          opts_queued.push((&cli_options[i].word, &cli_options[i].call, strs));
           opts_count = opts_count + 1 + strs_len;
         };
       };
@@ -164,9 +164,9 @@ fn get_config() -> Config<'static> {
   /* make any queued option calls */
   if opts_queued.len() > 0 {
     for i in 0..opts_queued.len() {
-      let (call, strs) = &opts_queued[i];
-      let (key, value) = call(&config, &cli_options, strs.to_vec());
-      config.opt_vals.insert(key, value);
+      let (word, call, strs) = &opts_queued[i];
+      let value = call(&config, &cli_options, strs.to_vec());
+      config.opt_vals.insert(word.to_string(), value);
     }
   }
 
@@ -184,7 +184,7 @@ fn main() {
     .split(config.tag.0)
     .skip(1) /* omit content preceding initial tag */
     .enumerate() /* yield also index (i) */
-    .filter(|(i, _)| !config.opt_vals.contains_key("script_nos") || match config.opt_vals.get("script_nos").unwrap() { /* account for only option */
+    .filter(|(i, _)| !config.opt_vals.contains_key("only") || match config.opt_vals.get("only").unwrap() { /* account for only option */
       CLIOptVal::Ints(val_ints) => val_ints.contains(&(i + 1)),
       _ => false
     })
@@ -206,7 +206,7 @@ fn parse<'a>(script_plus_tag_line_part: &'a str, config: &Config, i: usize) -> O
   let tag_line_data = tag_line_subparts.1.trim();
 
   /* handle option selected - list */
-  if opt_vals.contains_key("is_list") {
+  if opt_vals.contains_key("list") { /* account for list option */
     println!("{}:{} {}", i + 1, if tag_line_label.len() > 0 { [tag_line_label, ":"].concat() } else { "".to_string() }, tag_line_data);
     return None;
   };
@@ -363,7 +363,7 @@ mod test {
     let (mut config_default, i, _, _, _, _) = get_values_parse();
     let script_plus_tag_line_part = " ext program --flag value\n\n//code";
 
-    config_default.opt_vals.insert("is_list".to_string(), CLIOptVal::Bool(true));
+    config_default.opt_vals.insert("list".to_string(), CLIOptVal::Bool);
 
     let expected = Option::None;
     let obtained = parse(script_plus_tag_line_part, &config_default, i);

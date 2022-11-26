@@ -61,7 +61,7 @@ fn get_cli_option(word: &str, char: &str, val_strs: &[&str], desc: &str, call: &
   CLIOpt {
     word: String::from(word),
     char: String::from(char),
-    strs: if val_strs.len() > 0 { val_strs.iter().map(|&val_str|String::from(val_str)).collect::<Vec<String>>() } else { Vec::new() },
+    strs: if !val_strs.is_empty() { val_strs.iter().map(|&val_str|String::from(val_str)).collect::<Vec<String>>() } else { Vec::new() },
     desc: String::from(desc),
     call: Box::new(call)
   }
@@ -74,9 +74,9 @@ fn apply_cli_option_list(_0: &Config, _1: &[CLIOpt], _2: Vec<String>) -> CLIOptV
 }
 
 fn apply_cli_option_only(_0: &Config, _1: &[CLIOpt], strs: Vec<String>) -> CLIOptVal {
-  let val_ints: Vec<usize> = strs[0].trim().split(",")
+  let val_ints: Vec<usize> = strs[0].trim().split(',')
     .flat_map(|val_str| {
-      let vals: Vec<usize> = val_str.trim().split("-").map(|item| item.parse::<usize>().expect("parse subset for option 'only'")).collect();
+      let vals: Vec<usize> = val_str.trim().split('-').map(|item| item.parse::<usize>().expect("parse subset for option 'only'")).collect();
       if vals.len() > 1 { (vals[0]..(vals[1] + 1)).collect::<Vec<usize>>() } else { vals }
     })
     .collect();
@@ -88,12 +88,12 @@ fn apply_cli_option_push(config: &Config, _0: &[CLIOpt], strs: Vec<String>) -> C
   let script_filename = &strs[1];
   let Config { src, tag, dir: _, opt_vals: _ } = config;
 
-  let script = fs::read_to_string(script_filename).expect(&format!("read script file '{}'", script_filename));
+  let script = fs::read_to_string(script_filename).unwrap_or_else(|_| panic!("read script file '{}'", script_filename));
   let script_plus_tag_line = format!("\n{} {}\n\n{}", tag.0, strs[0], script);
 
   use std::io::Write;
   let mut file = fs::OpenOptions::new().append(true).open(src).unwrap();
-  file.write(&script_plus_tag_line.into_bytes()).expect("append script to source file");
+  file.write_all(&script_plus_tag_line.into_bytes()).expect("append script to source file");
 
   process::exit(0);
 }
@@ -102,7 +102,7 @@ fn apply_cli_option_help(_0: &Config, cli_options: &[CLIOpt], _2: Vec<String>) -
 
   /* set value substrings and max length */
   let val_strs = cli_options.iter()
-    .map(|cli_option| format!("{}", cli_option.strs.join(" ")))
+    .map(|cli_option| cli_option.strs.join(" "))
     .collect::<Vec<String>>();
   let val_strs_max = val_strs.iter()
     .fold(0, |acc, val_str| if val_str.len() > acc { val_str.len() } else { acc });
@@ -111,7 +111,7 @@ fn apply_cli_option_help(_0: &Config, cli_options: &[CLIOpt], _2: Vec<String>) -
   let usage_part = cli_options.iter()
     .filter(|cli_option| cli_option.word != "help") /* avoid duplication */
     .enumerate() /* yield also index (i) */
-    .map(|(i, cli_option)| format!("[--{}/-{}{}]", cli_option.word, cli_option.char, if val_strs.len() == 0 { "".to_owned() } else { " ".to_owned() + &val_strs[i] }))
+    .map(|(i, cli_option)| format!("[--{}/-{}{}]", cli_option.word, cli_option.char, if val_strs.is_empty() { "".to_owned() } else { " ".to_owned() + &val_strs[i] }))
     .collect::<Vec<String>>()
     .join(" ");
   let usage_line = format!("Usage: aliesce [--help/-h / {} [src]]", usage_part);
@@ -145,18 +145,18 @@ fn get_config() -> Config<'static> {
   let mut opts_queued = Vec::new();
   let mut opts_count = 0;
   if args_count > 1 {
-    for i in 0..cli_options.len() {
+    for cli_option in &cli_options {
       for j in 1..args_count {
-        if "--".to_owned() + &cli_options[i].word == args[j] || "-".to_owned() + &cli_options[i].char == args[j] {
-          let strs_len = cli_options[i].strs.len();
+        if "--".to_owned() + &cli_option.word == args[j] || "-".to_owned() + &cli_option.char == args[j] {
+          let strs_len = cli_option.strs.len();
           let strs = args[(j + 1)..(j + strs_len + 1)].to_vec();
-          opts_queued.push((&cli_options[i].word, &cli_options[i].call, strs));
+          opts_queued.push((&cli_option.word, &cli_option.call, strs));
           opts_count = opts_count + 1 + strs_len;
         };
       };
     };
   };
-  args_count = args_count - opts_count;
+  args_count -= args_count;
 
   /* set source filename (incl. output basename), script tag and output directory and initialize option values */
   let mut config = Config {
@@ -167,9 +167,9 @@ fn get_config() -> Config<'static> {
   };
 
   /* make any queued option calls */
-  if opts_queued.len() > 0 {
-    for i in 0..opts_queued.len() {
-      let (word, call, strs) = &opts_queued[i];
+  if !opts_queued.is_empty() {
+    for opt_queued in &opts_queued {
+      let (word, call, strs) = &opt_queued;
       let value = call(&config, &cli_options, strs.to_vec());
       config.opt_vals.insert(word.to_string(), value);
     }
@@ -185,7 +185,7 @@ fn main() {
   /* implement */
 
   /* get each script incl. tag line part, handle tag line, save and run */
-  fs::read_to_string(&config.src).expect(&format!("read source file '{}'", config.src))
+  fs::read_to_string(&config.src).unwrap_or_else(|_| panic!("read source file '{}'", config.src))
     .split(config.tag.0)
     .skip(1) /* omit content preceding initial tag */
     .enumerate() /* yield also index (i) */
@@ -212,21 +212,21 @@ fn parse<'a>(script_plus_tag_line_part: &'a str, config: &Config, i: usize) -> O
 
   /* handle option selected - list */
   if opt_vals.contains_key("list") { /* account for list option */
-    println!("{}:{} {}", i + 1, if tag_line_label.len() > 0 { [tag_line_label, ":"].concat() } else { "".to_string() }, tag_line_data);
+    println!("{}:{} {}", i + 1, if !tag_line_label.is_empty() { [tag_line_label, ":"].concat() } else { "".to_string() }, tag_line_data);
     return None;
   };
 
   /* get items from tag line data */
-  let data = tag_line_data.split(" ").filter(|item| item.to_string() != "".to_string()) /* remove whitespace */
+  let data = tag_line_data.split(' ').filter(|item| item.to_string() != *"") /* remove whitespace */
     .map(|item| item.to_string())
     .collect::<Vec<String>>();
 
   /* handle data absent or bypass */
-  if data.len() == 0 {
+  if data.is_empty() {
     println!("No tag data found for script no. {}", i + 1);
     return None;
   }
-  if data.iter().nth(0).unwrap() == "!" {
+  if data.get(0).unwrap() == "!" {
     println!("Bypassing script no. {} (! applied)", i + 1);
     return None;
   }
@@ -234,22 +234,22 @@ fn parse<'a>(script_plus_tag_line_part: &'a str, config: &Config, i: usize) -> O
   /* set output path parts */
 
   /* get output path parts - break first data item on '/' */
-  let mut parts_path = data.iter().nth(0).unwrap().split("/").collect::<Vec<&str>>();
+  let mut parts_path = data.get(0).unwrap().split('/').collect::<Vec<&str>>();
   /* get output filename parts - separate last output path part and break on '.' */
-  let parts_filename = parts_path.split_off(parts_path.len() - 1).last().unwrap().split(".").collect::<Vec<&str>>();
+  let parts_filename = parts_path.split_off(parts_path.len() - 1).last().unwrap().split('.').collect::<Vec<&str>>();
   let p_f_len = parts_filename.len();
 
   /* set as dir either remaining output path parts recombined or default dir */
-  let dir = if parts_path.len() > 0 { parts_path.join("/") } else { dir.to_string() };
+  let dir = if !parts_path.is_empty() { parts_path.join("/") } else { dir.to_string() };
   /* set as basename either all but last output filename part or src basename */
-  let basename = if p_f_len > 1 { parts_filename[..(p_f_len - 1)].join(".") } else { src.split(".").nth(0).unwrap().to_string() };
+  let basename = if p_f_len > 1 { parts_filename[..(p_f_len - 1)].join(".") } else { src.split('.').nth(0).unwrap().to_string() };
   /* set as ext last output filename part */
   let ext = parts_filename.iter().last().unwrap().to_string();
 
   /* set output init parts */
 
   /* set as prog tag line second item else '?' indicating absence (cf. function exec below) */
-  let prog = if data.len() != 1 { data.iter().nth(1).unwrap().to_owned() } else { "?".to_string() };
+  let prog = if data.len() != 1 { data.get(1).unwrap().to_owned() } else { "?".to_string() };
   /* set as args Vec containing tag line remaining items */
   let args = data.iter().skip(2).map(|arg| arg.to_owned()).collect::<Vec<String>>();
 
@@ -260,19 +260,19 @@ fn parse<'a>(script_plus_tag_line_part: &'a str, config: &Config, i: usize) -> O
   let path = OutputPath{ dir, basename, ext };
   let init = OutputInit{ prog, args };
 
-  return Some(Output { code, path, init, i });
+  Some(Output { code, path, init, i })
 }
 
 fn make(dir: String) {
 
   /* add directory if none */
-  fs::create_dir_all(&dir).expect(&format!("create directory '{}'", dir));
+  fs::create_dir_all(&dir).unwrap_or_else(|_| panic!("create directory '{}'", dir));
 }
 
-fn save(path: &String, code: String) {
+fn save(path: &str, code: String) {
 
   /* write script to file */
-  fs::write(path, code).expect(&format!("write script to '{}'", path));
+  fs::write(path, code).unwrap_or_else(|_| panic!("write script to '{}'", path));
 }
 
 fn exec(init: OutputInit, path: String, i: usize) {
@@ -285,8 +285,8 @@ fn exec(init: OutputInit, path: String, i: usize) {
 
   /* run script from file */
   process::Command::new(&prog).args(args).arg(path)
-    .spawn().expect(&format!("run file with '{}'", prog))
-    .wait_with_output().expect(&format!("await output from '{}'", prog));
+    .spawn().unwrap_or_else(|_| panic!("run file with '{}'", prog))
+    .wait_with_output().unwrap_or_else(|_| panic!("await output from '{}'", prog));
 }
 
 fn apply(output: Option<Output>) {

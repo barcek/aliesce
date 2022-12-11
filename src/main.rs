@@ -51,9 +51,51 @@ struct OutputInit {
 struct Output {
   data: Vec<String>,
   code: String,
-  path: Option<OutputPath>,
-  init: Option<OutputInit>,
+  path: OutputPath,
+  init: OutputInit,
   i: usize
+}
+
+impl OutputPath {
+  fn get(&self) -> String {
+    format!("{}/{}.{}", &self.dir, &self.basename, &self.ext)
+  }
+}
+
+impl Output {
+  fn new(data: Vec<String>, code: String, i: usize, config: &Config) -> Output {
+
+    let Config { src, tag: _, dir, opt_vals: _ } = config;
+
+    /* set output path parts */
+
+    /* get output path parts - break first data item on '/' */
+    let mut parts_path = data.get(0).unwrap().split('/').collect::<Vec<&str>>();
+    /* get output filename parts - separate last output path part and break on '.' */
+    let parts_filename = parts_path.split_off(parts_path.len() - 1).last().unwrap().split('.').collect::<Vec<&str>>();
+    let p_f_len = parts_filename.len();
+
+    /* set as dir either remaining output path parts recombined or default dir */
+    let dir = if !parts_path.is_empty() { parts_path.join("/") } else { dir.to_string() };
+    /* set as basename either all but last output filename part or src basename */
+    let basename = if p_f_len > 1 { parts_filename[..(p_f_len - 1)].join(".") } else { src.split('.').nth(0).unwrap().to_string() };
+    /* set as ext last output filename part */
+    let ext = parts_filename.iter().last().unwrap().to_string();
+
+    /* set output init parts */
+
+    /* set as prog tag line second item else '?' indicating absence (cf. function exec below) */
+    let prog = if data.len() != 1 { data.get(1).unwrap().to_owned() } else { "?".to_string() };
+    /* set as args Vec containing tag line remaining items */
+    let args = data.iter().skip(2).map(|arg| arg.to_owned()).collect::<Vec<String>>();
+
+    /* assemble return value */
+
+    let path = OutputPath{ dir, basename, ext };
+    let init = OutputInit{ prog, args };
+
+    Output { data, code, path, init, i }
+  }
 }
 
 /* define utility functions */
@@ -194,11 +236,11 @@ fn main() {
       CLIOptVal::Ints(val_ints) => val_ints.contains(&(i + 1)),
       _ => false
     })
-    .map(|(i, script_plus_tag_line_part)| parse(script_plus_tag_line_part, &config, i))
+    .map(|(i, script_plus_tag_line_part)| build(script_plus_tag_line_part, &config, i))
     .for_each(apply)
 }
 
-fn parse_base(script_plus_tag_line_part: &str, config: &Config, i: usize) -> Option<Output> {
+fn build(script_plus_tag_line_part: &str, config: &Config, i: usize) -> Option<Output> {
 
   let Config { src: _, tag, dir: _, opt_vals } = config;
   let tag_1 = tag.1;
@@ -234,81 +276,26 @@ fn parse_base(script_plus_tag_line_part: &str, config: &Config, i: usize) -> Opt
     return None;
   }
 
-  return Some(Output { data, code, path: None, init: None, i });
+  Some(Output::new(data, code, i, &config))
 }
 
-fn parse_path(output: Option<Output>, config: &Config) -> Option<Output> {
+fn save(output: &Output) {
 
-  let Config { src, tag: _, dir, opt_vals: _ } = config;
-  let Output { data, code, path: _, init, i } = match output {
-    Some(s) => s,
-    None    => { return None; }
-  };
-
-  /* set output path parts */
-
-  /* get output path parts - break first data item on '/' */
-  let mut parts_path = data.get(0).unwrap().split('/').collect::<Vec<&str>>();
-  /* get output filename parts - separate last output path part and break on '.' */
-  let parts_filename = parts_path.split_off(parts_path.len() - 1).last().unwrap().split('.').collect::<Vec<&str>>();
-  let p_f_len = parts_filename.len();
-
-  /* set as dir either remaining output path parts recombined or default dir */
-  let dir = if !parts_path.is_empty() { parts_path.join("/") } else { dir.to_string() };
-  /* set as basename either all but last output filename part or src basename */
-  let basename = if p_f_len > 1 { parts_filename[..(p_f_len - 1)].join(".") } else { src.split('.').nth(0).unwrap().to_string() };
-  /* set as ext last output filename part */
-  let ext = parts_filename.iter().last().unwrap().to_string();
-
-  /* assemble return value */
-
-  let path = Some(OutputPath{ dir, basename, ext });
-
-  Some(Output { data, code, path, init, i })
-}
-
-fn parse_init(output: Option<Output>) -> Option<Output> {
-
-  let Output { data, code, path, init: _, i } = match output {
-    Some(s) => s,
-    None    => { return None; }
-  };
-
-  /* set output init parts */
-
-  /* set as prog tag line second item else '?' indicating absence (cf. function exec below) */
-  let prog = if data.len() != 1 { data.get(1).unwrap().to_owned() } else { "?".to_string() };
-  /* set as args Vec containing tag line remaining items */
-  let args = data.iter().skip(2).map(|arg| arg.to_owned()).collect::<Vec<String>>();
-
-  /* assemble return value */
-
-  let init = Some(OutputInit{ prog, args });
-
-  Some(Output { data, code, path, init, i })
-}
-
-fn parse(script_plus_tag_line_part: &str, config: &Config, i: usize) -> Option<Output> {
-  let mut output = parse_base(script_plus_tag_line_part, &config, i);
-  output = parse_path(output, &config);
-  parse_init(output)
-}
-
-fn make(dir: String) {
+  let Output { data: _, code, path, init: _, i: _ } = output;
+  let dir = &path.dir;
+  let path = path.get();
 
   /* add directory if none */
-  fs::create_dir_all(&dir).unwrap_or_else(|_| panic!("create directory '{}'", dir));
-}
-
-fn save(path: &str, code: String) {
-
+  fs::create_dir_all(&dir).unwrap_or_else(|_| panic!("create directory '{}'", &dir));
   /* write script to file */
-  fs::write(path, code).unwrap_or_else(|_| panic!("write script to '{}'", path));
+  fs::write(&path, code).unwrap_or_else(|_| panic!("write script to '{}'", &path));
 }
 
-fn exec(init: Option<OutputInit>, path: String, i: usize) {
+fn exec(output: &Output) {
 
-  let OutputInit { prog, args } = init.unwrap();
+  let Output { data: _, code: _, path, init, i } = output;
+  let OutputInit { prog, args } = init;
+  let path = path.get();
 
   /* handle run precluded */
   if prog == "!" { return println!("Not running file no. {} (! applied)", i + 1); }
@@ -321,30 +308,19 @@ fn exec(init: Option<OutputInit>, path: String, i: usize) {
 }
 
 fn apply(output: Option<Output>) {
-
-  /* destructure if some */
-  let Output { data: _, code, path, init, i } = match output {
-    Some(s) => s,
+  match output {
+    Some(s) => { save(&s); exec(&s); },
     None    => { return }
   };
-
-  /* destructure and join */
-  let OutputPath { dir, basename, ext } = path.unwrap();
-  let path = format!("{}/{}.{}", dir, basename, ext);
-
-  /* perform final tasks */
-  make(dir);
-  save(&path, code);
-  exec(init, path, i);
 }
 
 #[cfg(test)]
 mod test {
 
   use::std::collections::HashMap;
-  use super::{ Config, CLIOptVal, OutputPath, OutputInit, Output, parse };
+  use super::{ Config, CLIOptVal, OutputPath, OutputInit, Output, build };
 
-  fn get_values_parse() -> (Config<'static>, usize, String, OutputPath, OutputInit) {
+  fn get_values_build() -> (Config<'static>, usize, String, OutputPath, OutputInit) {
 
     let src_default_str = "src.txt";
     let src_basename_default_str = src_default_str.split(".").nth(0).unwrap();
@@ -377,49 +353,49 @@ mod test {
   }
 
   #[test]
-  fn parse_returns_for_tag_data_full_some_output() {
+  fn build_returns_for_tag_data_full_some_output() {
 
-    let (config_default, i, code, path, init) = get_values_parse();
+    let (config_default, i, code, path, init) = get_values_build();
     let script_plus_tag_line_part = " ext program --flag value\n\n//code";
     let data = Vec::from(["ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
-    let expected = Option::Some(Output { data, code, path: Some(path), init: Some(init), i });
-    let obtained = parse(script_plus_tag_line_part, &config_default, i);
+    let expected = Option::Some(Output { data, code, path: path, init: init, i });
+    let obtained = build(script_plus_tag_line_part, &config_default, i);
 
     assert_eq!(expected, obtained);
   }
 
   #[test]
-  fn parse_returns_for_tag_label_and_data_full_some_output() {
+  fn build_returns_for_tag_label_and_data_full_some_output() {
 
-    let (config_default, i, code, path, init) = get_values_parse();
+    let (config_default, i, code, path, init) = get_values_build();
     let script_plus_tag_line_part = " label # ext program --flag value\n\n//code";
     let data = Vec::from(["ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
-    let expected = Option::Some(Output { data, code, path: Some(path), init: Some(init), i });
-    let obtained = parse(script_plus_tag_line_part, &config_default, i);
+    let expected = Option::Some(Output { data, code, path: path, init: init, i });
+    let obtained = build(script_plus_tag_line_part, &config_default, i);
 
     assert_eq!(expected, obtained);
   }
 
   #[test]
-  fn parse_returns_for_list_option_none() {
+  fn build_returns_for_list_option_none() {
 
-    let (mut config_default, i, _, _, _) = get_values_parse();
+    let (mut config_default, i, _, _, _) = get_values_build();
     let script_plus_tag_line_part = " ext program --flag value\n\n//code";
 
     config_default.opt_vals.insert("list".to_string(), CLIOptVal::Bool);
 
     let expected = Option::None;
-    let obtained = parse(script_plus_tag_line_part, &config_default, i);
+    let obtained = build(script_plus_tag_line_part, &config_default, i);
 
     assert_eq!(expected, obtained);
   }
 
   #[test]
-  fn parse_returns_for_tag_data_full_incl_singlepart_output_basename_some_output() {
+  fn build_returns_for_tag_data_full_incl_singlepart_output_basename_some_output() {
 
-    let (config_default, i, code, _, init) = get_values_parse();
+    let (config_default, i, code, _, init) = get_values_build();
     let script_plus_tag_line_part = " script.ext program --flag value\n\n//code";
     let data = Vec::from(["script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
@@ -428,16 +404,16 @@ mod test {
     let ext = String::from("ext");
     let path = OutputPath { dir, basename, ext };
 
-    let expected = Option::Some(Output { data, code, path: Some(path), init: Some(init), i });
-    let obtained = parse(script_plus_tag_line_part, &config_default, i);
+    let expected = Option::Some(Output { data, code, path: path, init: init, i });
+    let obtained = build(script_plus_tag_line_part, &config_default, i);
 
     assert_eq!(expected, obtained);
   }
 
   #[test]
-  fn parse_returns_for_tag_data_full_incl_multipart_output_basename_some_output() {
+  fn build_returns_for_tag_data_full_incl_multipart_output_basename_some_output() {
 
-    let (config_default, i, code, _, init) = get_values_parse();
+    let (config_default, i, code, _, init) = get_values_build();
     let script_plus_tag_line_part = " script.suffix1.suffix2.ext program --flag value\n\n//code";
     let data = Vec::from(["script.suffix1.suffix2.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
@@ -446,16 +422,16 @@ mod test {
     let ext = String::from("ext");
     let path = OutputPath { dir, basename, ext };
 
-    let expected = Option::Some(Output { data, code, path: Some(path), init: Some(init), i });
-    let obtained = parse(script_plus_tag_line_part, &config_default, i);
+    let expected = Option::Some(Output { data, code, path: path, init: init, i });
+    let obtained = build(script_plus_tag_line_part, &config_default, i);
 
     assert_eq!(expected, obtained);
   }
 
   #[test]
-  fn parse_returns_for_tag_data_full_incl_output_dir_some_output() {
+  fn build_returns_for_tag_data_full_incl_output_dir_some_output() {
 
-    let (config_default, i, code, _, init) = get_values_parse();
+    let (config_default, i, code, _, init) = get_values_build();
     let script_plus_tag_line_part = " dir/script.ext program --flag value\n\n//code";
     let data = Vec::from(["dir/script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
@@ -464,16 +440,16 @@ mod test {
     let ext = String::from("ext");
     let path = OutputPath { dir, basename, ext };
 
-    let expected = Option::Some(Output { data, code, path: Some(path), init: Some(init), i });
-    let obtained = parse(script_plus_tag_line_part, &config_default, i);
+    let expected = Option::Some(Output { data, code, path: path, init: init, i });
+    let obtained = build(script_plus_tag_line_part, &config_default, i);
 
     assert_eq!(expected, obtained);
   }
 
   #[test]
-  fn parse_returns_for_tag_data_minus_cmd_some_output_indicating() {
+  fn build_returns_for_tag_data_minus_cmd_some_output_indicating() {
 
-    let (config_default, i, code, path, _) = get_values_parse();
+    let (config_default, i, code, path, _) = get_values_build();
     let script_plus_tag_line_part = " ext\n\n//code";
     let data = Vec::from(["ext".to_string()]);
 
@@ -481,33 +457,33 @@ mod test {
     let args = Vec::from([]);
     let init = OutputInit { prog, args };
 
-    let expected = Option::Some(Output { data, code, path: Some(path), init: Some(init), i });
+    let expected = Option::Some(Output { data, code, path: path, init: init, i });
 
-    let obtained = parse(script_plus_tag_line_part, &config_default, i);
+    let obtained = build(script_plus_tag_line_part, &config_default, i);
 
     assert_eq!(expected, obtained);
   }
 
   #[test]
-  fn parse_returns_for_tag_data_full_with_bypass_none() {
+  fn build_returns_for_tag_data_full_with_bypass_none() {
 
-    let (config_default, i, _, _, _) = get_values_parse();
+    let (config_default, i, _, _, _) = get_values_build();
     let script_plus_tag_line_part = " ! ext program --flag value\n\n//code";
 
     let expected = Option::None;
-    let obtained = parse(script_plus_tag_line_part, &config_default, i);
+    let obtained = build(script_plus_tag_line_part, &config_default, i);
 
     assert_eq!(expected, obtained);
   }
 
   #[test]
-  fn parse_returns_for_tag_data_absent_none() {
+  fn build_returns_for_tag_data_absent_none() {
 
-    let (config_default, i, _, _, _) = get_values_parse();
+    let (config_default, i, _, _, _) = get_values_build();
     let script_plus_tag_line_part = "\n\n//code";
 
     let expected = Option::None;
-    let obtained = parse(script_plus_tag_line_part, &config_default, i);
+    let obtained = build(script_plus_tag_line_part, &config_default, i);
 
     assert_eq!(expected, obtained);
   }

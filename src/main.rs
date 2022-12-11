@@ -3,42 +3,21 @@ use std::fs;
 use std::process;
 use std::collections::HashMap;
 
-/* define data structures */
+/* TRANSFORMATION */
 
-struct Config<'a> {
-  src: String,
-  tag: (&'a str, &'a str),
-  dir: &'a str,
-  opt_vals: CLIOptValMap
-}
-
-/* - for CLI options */
-
-#[derive(PartialEq, Eq)]
-enum CLIOptVal {
-  Bool,
-  Ints(Vec<usize>)
-}
-
-type CLIOptValMap = HashMap<String, CLIOptVal>;
-
-type CLIOptCall = dyn Fn(&Config, &[CLIOpt], Vec<String>) -> CLIOptVal;
-
-struct CLIOpt {
-  word: String,
-  char: String,
-  strs: Vec<String>,
-  desc: String,
-  call: Box<CLIOptCall>
-}
-
-/* - for parsed output */
+/* data structures */
 
 #[derive(Debug, PartialEq)]
 struct OutputPath {
   dir: String,
   basename: String,
   ext: String
+}
+
+impl OutputPath {
+  fn get(&self) -> String {
+    format!("{}/{}.{}", &self.dir, &self.basename, &self.ext)
+  }
 }
 
 #[derive(Debug, PartialEq)]
@@ -54,12 +33,6 @@ struct Output {
   path: OutputPath,
   init: OutputInit,
   i: usize
-}
-
-impl OutputPath {
-  fn get(&self) -> String {
-    format!("{}/{}.{}", &self.dir, &self.basename, &self.ext)
-  }
 }
 
 impl Output {
@@ -98,7 +71,129 @@ impl Output {
   }
 }
 
-/* define utility functions */
+/* primary functions */
+
+fn main() {
+
+  let config = get_config();
+
+  /* get each script incl. tag line part, filter per config and build and apply output */
+  fs::read_to_string(&config.src).unwrap_or_else(|_| panic!("read source file '{}'", config.src))
+    .split(config.tag.0)
+    .skip(1) /* omit content preceding initial tag */
+    .enumerate() /* yield also index (i) */
+    .filter(|(i, _)| !config.opt_vals.contains_key("only") || match config.opt_vals.get("only").unwrap() { /* account for only option */
+      CLIOptVal::Ints(val_ints) => val_ints.contains(&(i + 1)),
+      _ => false
+    })
+    .map(|(i, script_plus_tag_line_part)| build(script_plus_tag_line_part, &config, i))
+    .for_each(apply)
+}
+
+fn build(script_plus_tag_line_part: &str, config: &Config, i: usize) -> Option<Output> {
+
+  let Config { src: _, tag, dir: _, opt_vals } = config;
+  let tag_1 = tag.1;
+
+  let mut lines = script_plus_tag_line_part.lines();
+  let tag_line_part = lines.nth(0).unwrap();
+
+  /* get label and data from tag line */
+  let tag_line_subparts = match tag_line_part.find(tag_1) { Some(i) => tag_line_part.split_at(i + 1), None => ("", tag_line_part) };
+  let tag_line_label = tag_line_subparts.0.split(tag_1).nth(0).unwrap(); /* untrimmed */
+  let tag_line_data = tag_line_subparts.1.trim();
+
+  /* handle option selected - list */
+  if opt_vals.contains_key("list") { /* account for list option */
+    println!("{}:{} {}", i + 1, if !tag_line_label.is_empty() { [tag_line_label, ":"].concat() } else { "".to_string() }, tag_line_data);
+    return None;
+  };
+
+  let code = lines.skip(1).collect::<Vec<&str>>().join("\n");
+
+  /* get items from tag line data */
+  let data = tag_line_data.split(' ').filter(|item| item.to_string() != *"") /* remove whitespace */
+    .map(|item| item.to_string())
+    .collect::<Vec<String>>();
+
+  /* handle data absent or bypass */
+  if data.is_empty() {
+    println!("No tag data found for script no. {}", i + 1);
+    return None;
+  }
+  if data.get(0).unwrap() == "!" {
+    println!("Bypassing script no. {} (! applied)", i + 1);
+    return None;
+  }
+
+  Some(Output::new(data, code, i, &config))
+}
+
+fn apply(output: Option<Output>) {
+  match output {
+    Some(s) => { save(&s); exec(&s); },
+    None    => { return }
+  };
+}
+
+fn save(output: &Output) {
+
+  let Output { data: _, code, path, init: _, i: _ } = output;
+  let dir = &path.dir;
+  let path = path.get();
+
+  /* add directory if none */
+  fs::create_dir_all(&dir).unwrap_or_else(|_| panic!("create directory '{}'", &dir));
+  /* write script to file */
+  fs::write(&path, code).unwrap_or_else(|_| panic!("write script to '{}'", &path));
+}
+
+fn exec(output: &Output) {
+
+  let Output { data: _, code: _, path, init, i } = output;
+  let OutputInit { prog, args } = init;
+  let path = path.get();
+
+  /* handle run precluded */
+  if prog == "!" { return println!("Not running file no. {} (! applied)", i + 1); }
+  if prog == "?" { return println!("Not running file no. {} (no values)", i + 1); }
+
+  /* run script from file */
+  process::Command::new(&prog).args(args).arg(path)
+    .spawn().unwrap_or_else(|_| panic!("run file with '{}'", prog))
+    .wait_with_output().unwrap_or_else(|_| panic!("await output from '{}'", prog));
+}
+
+/* CONFIGURATION */
+
+/* data structures */
+
+struct Config<'a> {
+  src: String,
+  tag: (&'a str, &'a str),
+  dir: &'a str,
+  opt_vals: CLIOptValMap
+}
+
+#[derive(PartialEq, Eq)]
+enum CLIOptVal {
+  Bool,
+  Ints(Vec<usize>)
+}
+
+type CLIOptValMap = HashMap<String, CLIOptVal>;
+
+type CLIOptCall = dyn Fn(&Config, &[CLIOpt], Vec<String>) -> CLIOptVal;
+
+struct CLIOpt {
+  word: String,
+  char: String,
+  strs: Vec<String>,
+  desc: String,
+  call: Box<CLIOptCall>
+}
+
+/* utility functions */
 
 fn get_cli_option(word: &str, char: &str, val_strs: &[&str], desc: &str, call: &'static CLIOptCall) -> CLIOpt {
   CLIOpt {
@@ -110,7 +205,7 @@ fn get_cli_option(word: &str, char: &str, val_strs: &[&str], desc: &str, call: &
   }
 }
 
-/* define CLI option applicators */
+/* primary functions */
 
 fn apply_cli_option_list(_0: &Config, _1: &[CLIOpt], _2: Vec<String>) -> CLIOptVal {
   CLIOptVal::Bool
@@ -221,98 +316,7 @@ fn get_config() -> Config<'static> {
   config
 }
 
-fn main() {
-
-  let config = get_config();
-
-  /* implement */
-
-  /* get each script incl. tag line part, handle tag line, save and run */
-  fs::read_to_string(&config.src).unwrap_or_else(|_| panic!("read source file '{}'", config.src))
-    .split(config.tag.0)
-    .skip(1) /* omit content preceding initial tag */
-    .enumerate() /* yield also index (i) */
-    .filter(|(i, _)| !config.opt_vals.contains_key("only") || match config.opt_vals.get("only").unwrap() { /* account for only option */
-      CLIOptVal::Ints(val_ints) => val_ints.contains(&(i + 1)),
-      _ => false
-    })
-    .map(|(i, script_plus_tag_line_part)| build(script_plus_tag_line_part, &config, i))
-    .for_each(apply)
-}
-
-fn build(script_plus_tag_line_part: &str, config: &Config, i: usize) -> Option<Output> {
-
-  let Config { src: _, tag, dir: _, opt_vals } = config;
-  let tag_1 = tag.1;
-
-  let mut lines = script_plus_tag_line_part.lines();
-  let tag_line_part = lines.nth(0).unwrap();
-
-  /* get label and data from tag line */
-  let tag_line_subparts = match tag_line_part.find(tag_1) { Some(i) => tag_line_part.split_at(i + 1), None => ("", tag_line_part) };
-  let tag_line_label = tag_line_subparts.0.split(tag_1).nth(0).unwrap(); /* untrimmed */
-  let tag_line_data = tag_line_subparts.1.trim();
-
-  /* handle option selected - list */
-  if opt_vals.contains_key("list") { /* account for list option */
-    println!("{}:{} {}", i + 1, if !tag_line_label.is_empty() { [tag_line_label, ":"].concat() } else { "".to_string() }, tag_line_data);
-    return None;
-  };
-
-  let code = lines.skip(1).collect::<Vec<&str>>().join("\n");
-
-  /* get items from tag line data */
-  let data = tag_line_data.split(' ').filter(|item| item.to_string() != *"") /* remove whitespace */
-    .map(|item| item.to_string())
-    .collect::<Vec<String>>();
-
-  /* handle data absent or bypass */
-  if data.is_empty() {
-    println!("No tag data found for script no. {}", i + 1);
-    return None;
-  }
-  if data.get(0).unwrap() == "!" {
-    println!("Bypassing script no. {} (! applied)", i + 1);
-    return None;
-  }
-
-  Some(Output::new(data, code, i, &config))
-}
-
-fn save(output: &Output) {
-
-  let Output { data: _, code, path, init: _, i: _ } = output;
-  let dir = &path.dir;
-  let path = path.get();
-
-  /* add directory if none */
-  fs::create_dir_all(&dir).unwrap_or_else(|_| panic!("create directory '{}'", &dir));
-  /* write script to file */
-  fs::write(&path, code).unwrap_or_else(|_| panic!("write script to '{}'", &path));
-}
-
-fn exec(output: &Output) {
-
-  let Output { data: _, code: _, path, init, i } = output;
-  let OutputInit { prog, args } = init;
-  let path = path.get();
-
-  /* handle run precluded */
-  if prog == "!" { return println!("Not running file no. {} (! applied)", i + 1); }
-  if prog == "?" { return println!("Not running file no. {} (no values)", i + 1); }
-
-  /* run script from file */
-  process::Command::new(&prog).args(args).arg(path)
-    .spawn().unwrap_or_else(|_| panic!("run file with '{}'", prog))
-    .wait_with_output().unwrap_or_else(|_| panic!("await output from '{}'", prog));
-}
-
-fn apply(output: Option<Output>) {
-  match output {
-    Some(s) => { save(&s); exec(&s); },
-    None    => { return }
-  };
-}
+/* UNIT TESTS */
 
 #[cfg(test)]
 mod test {

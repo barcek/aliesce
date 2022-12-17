@@ -3,6 +3,18 @@ use std::fs;
 use std::process;
 use std::collections::HashMap;
 
+/* DEFAULT VALUES */
+
+#[derive(Clone, Copy)]
+pub struct ScriptTag<'a> {
+  head: &'a str,
+  tail: &'a str
+}
+
+pub static SRC: &str = "src.txt"; /* source filename (incl. output basename) */
+pub static DIR: &str = "scripts"; /* output directory */
+pub static TAG: ScriptTag = ScriptTag { head: "###", tail: "#" };
+
 /* TRANSFORMATION */
 
 /* data structures */
@@ -79,8 +91,8 @@ fn main() {
 
   /* load script file content or exit early */
   fs::read_to_string(&config.src).unwrap_or_else(|_| panic!("read source file '{}'", config.src))
-    /* get each script with tag line minus tag, omitting content preceding first */
-    .split(config.tag.0).skip(1)
+    /* get each script with tag line minus tag head, omitting content preceding first */
+    .split(config.tag.head).skip(1)
     /* yield also index (i) for each item */
     .enumerate()
     /* use subset if only option selected */
@@ -97,14 +109,13 @@ fn main() {
 fn build(script_plus_tag_line_part: &str, config: &Config, i: usize) -> Option<Output> {
 
   let Config { src: _, tag, dir: _, opt_vals } = config;
-  let tag_1 = tag.1;
 
   let mut lines = script_plus_tag_line_part.lines();
   let tag_line_part = lines.nth(0).unwrap();
 
   /* get label and data from tag line */
-  let tag_line_subparts = match tag_line_part.find(tag_1) { Some(i) => tag_line_part.split_at(i + 1), None => ("", tag_line_part) };
-  let tag_line_label = tag_line_subparts.0.split(tag_1).nth(0).unwrap(); /* untrimmed */
+  let tag_line_subparts = match tag_line_part.find(tag.tail) { Some(i) => tag_line_part.split_at(i + 1), None => ("", tag_line_part) };
+  let tag_line_label = tag_line_subparts.0.split(tag.tail).nth(0).unwrap(); /* untrimmed */
   let tag_line_data = tag_line_subparts.1.trim();
 
   /* handle option selected - list */
@@ -174,7 +185,7 @@ fn exec(output: &Output) {
 
 struct Config<'a> {
   src: String,
-  tag: (&'a str, &'a str),
+  tag: ScriptTag<'a>,
   dir: &'a str,
   opt_vals: CLIOptValMap
 }
@@ -231,7 +242,7 @@ fn apply_cli_option_push(config: &Config, _0: &[CLIOpt], strs: Vec<String>) -> C
   let Config { src, tag, dir: _, opt_vals: _ } = config;
 
   let script = fs::read_to_string(script_filename).unwrap_or_else(|_| panic!("read script file '{}'", script_filename));
-  let script_plus_tag_line = format!("\n{} {}\n\n{}", tag.0, strs[0], script);
+  let script_plus_tag_line = format!("\n{} {}\n\n{}", tag.head, strs[0], script);
 
   use std::io::Write;
   let mut file = fs::OpenOptions::new().append(true).open(src).unwrap();
@@ -300,11 +311,11 @@ fn get_config() -> Config<'static> {
   };
   args_count -= args_count;
 
-  /* set source filename (incl. output basename), script tag and output directory and initialize option values */
+  /* set final source filename (incl. output basename), get script tag and output directory and initialize option values */
   let mut config = Config {
-    src: if args_count > 1 { String::from(args.last().unwrap()) } else { String::from("src.txt") },
-    tag: ("###", "#"),
-    dir: "scripts",
+    src: if args_count > 1 { String::from(args.last().unwrap()) } else { String::from(SRC) },
+    tag: TAG,
+    dir: DIR,
     opt_vals: HashMap::new()
   };
 
@@ -326,13 +337,13 @@ fn get_config() -> Config<'static> {
 mod test {
 
   use::std::collections::HashMap;
-  use super::{ Config, CLIOptVal, OutputPath, OutputInit, Output, build };
+  use super::{ ScriptTag, Config, CLIOptVal, OutputPath, OutputInit, Output, build };
 
   fn get_values_build() -> (Config<'static>, usize, String, OutputPath, OutputInit) {
 
     let src_default_str = "src.txt";
     let src_basename_default_str = src_default_str.split(".").nth(0).unwrap();
-    let tag_default = ("###", "#");
+    let tag_default = ScriptTag { head: "###", tail: "#" };
     let dir_default_str = "scripts";
     let opt_vals_default = HashMap::new();
 

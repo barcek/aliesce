@@ -77,16 +77,20 @@ fn main() {
 
   let config = get_config();
 
-  /* get each script incl. tag line part, filter per config and build and apply output */
+  /* load script file content or exit early */
   fs::read_to_string(&config.src).unwrap_or_else(|_| panic!("read source file '{}'", config.src))
-    .split(config.tag.0)
-    .skip(1) /* omit content preceding initial tag */
-    .enumerate() /* yield also index (i) */
-    .filter(|(i, _)| !config.opt_vals.contains_key("only") || match config.opt_vals.get("only").unwrap() { /* account for only option */
+    /* get each script with tag line minus tag, omitting content preceding first */
+    .split(config.tag.0).skip(1)
+    /* yield also index (i) for each item */
+    .enumerate()
+    /* use subset if only option selected */
+    .filter(|(i, _)| !config.opt_vals.contains_key("only") || match config.opt_vals.get("only").unwrap() {
       CLIOptVal::Ints(val_ints) => val_ints.contains(&(i + 1)),
-      _ => false
+      _                         => false
     })
+    /* parse each item to output instance */
     .map(|(i, script_plus_tag_line_part)| build(script_plus_tag_line_part, &config, i))
+    /* save and run each output instance */
     .for_each(apply)
 }
 

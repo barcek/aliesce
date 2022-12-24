@@ -120,21 +120,26 @@ fn parse(script_plus_tag_line_part: &str, config: &Config, i: usize) -> Option<O
   let tag_line_part = lines.nth(0).unwrap();
 
   /* get label and data from tag line */
-  let tag_line_subparts = match tag_line_part.find(tag.tail) { Some(i) => tag_line_part.split_at(i + 1), None => ("", tag_line_part) };
-  let tag_line_label = tag_line_subparts.0.split(tag.tail).nth(0).unwrap(); /* untrimmed */
-  let tag_line_data = tag_line_subparts.1.trim();
+  let tag_line_sections = match tag_line_part.find(tag.tail) {
+    Some(i) => tag_line_part.split_at(i + 1),
+    None    => ("", tag_line_part)
+  };
+  let tag_line_label = tag_line_sections.0.split(tag.tail).nth(0).unwrap(); /* untrimmed */
+  let tag_line_data  = tag_line_sections.1.trim();
 
   /* handle option selected - list */
   if opt_vals.contains_key("list") { /* account for list option */
-    let text = format!("{}:{} {}", i + 1, if !tag_line_label.is_empty() { [tag_line_label, ":"].concat() } else { "".to_string() }, tag_line_data);
+    let join = if !tag_line_label.is_empty() { [tag_line_label, ":"].concat() } else { "".to_string() };
+    let text = format!("{}:{} {}", i + 1, join, tag_line_data);
     return Some(Output::Text(text));
   };
 
   let code = lines.skip(1).collect::<Vec<&str>>().join("\n");
 
   /* get items from tag line data */
-  let data = tag_line_data.split(' ').filter(|item| item.to_string() != *"") /* remove whitespace */
+  let data = tag_line_data.split(' ')
     .map(|item| item.to_string())
+    .filter(|item| item != "") /* remove whitespace */
     .collect::<Vec<String>>();
 
   /* handle data absent or bypass */

@@ -97,13 +97,15 @@ fn main() {
 
   /* load script file content or exit early */
   fs::read_to_string(&config.src).unwrap_or_else(|_| panic!("read source file '{}'", config.src))
-    /* get each script with tag line minus tag head, omitting content preceding first */
-    .split(config.tag.head).skip(1)
+    /* get each script with tag line minus tag head */
+    .split(config.tag.head)
     /* yield also index (i) for each item */
     .enumerate()
+    /* omit content preceding first item */
+    .skip(1)
     /* use subset if only option selected */
     .filter(|(i, _)| !config.opt_vals.contains_key("only") || match config.opt_vals.get("only").unwrap() {
-      CLIOptVal::Ints(val_ints) => val_ints.contains(&(i + 1)),
+      CLIOptVal::Ints(val_ints) => val_ints.contains(&(i)),
       _                         => false
     })
     /* parse each item to output variant */
@@ -130,7 +132,7 @@ fn parse(script_plus_tag_line_part: &str, config: &Config, i: usize) -> Option<O
   /* handle option selected - list */
   if opt_vals.contains_key("list") { /* account for list option */
     let join = if !tag_line_label.is_empty() { [tag_line_label, ":"].concat() } else { "".to_string() };
-    let text = format!("{}:{} {}", i + 1, join, tag_line_data);
+    let text = format!("{}:{} {}", i, join, tag_line_data);
     return Some(Output::Text(text));
   };
 
@@ -144,11 +146,11 @@ fn parse(script_plus_tag_line_part: &str, config: &Config, i: usize) -> Option<O
 
   /* handle data absent or bypass */
   if data.is_empty() {
-    let text = format!("No tag data found for script no. {}", i + 1);
+    let text = format!("No tag data found for script no. {}", i);
     return Some(Output::Text(text));
   }
   if data.get(0).unwrap() == "!" {
-    let text = format!("Bypassing script no. {} (! applied)", i + 1);
+    let text = format!("Bypassing script no. {} (! applied)", i);
     return Some(Output::Text(text));
   }
 
@@ -182,8 +184,8 @@ fn exec(output: &OutputFile) {
   let path = path.get();
 
   /* handle run precluded */
-  if prog == "!" { return println!("Not running file no. {} (! applied)", i + 1); }
-  if prog == "?" { return println!("Not running file no. {} (no values)", i + 1); }
+  if prog == "!" { return println!("Not running file no. {} (! applied)", i); }
+  if prog == "?" { return println!("Not running file no. {} (no values)", i); }
 
   /* run script from file */
   process::Command::new(&prog).args(args).arg(path)
@@ -367,7 +369,7 @@ mod test {
     };
 
     /* base test script values */
-    let index = 0;
+    let index = 1;
     let ext   = String::from("ext");
     let prog  = String::from("program");
     let args  = Vec::from([String::from("--flag"), String::from("value")]);

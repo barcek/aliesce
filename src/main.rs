@@ -215,15 +215,15 @@ struct CLIOpt {
   call: Box<CLIOptCall>
 }
 
-/* utility functions */
-
-fn get_cli_option(word: &str, char: &str, val_strs: &[&str], desc: &str, call: &'static CLIOptCall) -> CLIOpt {
-  CLIOpt {
-    word: String::from(word),
-    char: String::from(char),
-    strs: if !val_strs.is_empty() { val_strs.iter().map(|&val_str|String::from(val_str)).collect::<Vec<String>>() } else { Vec::new() },
-    desc: String::from(desc),
-    call: Box::new(call)
+impl CLIOpt {
+  fn new(word: &str, char: &str, val_strs: &[&str], desc: &str, call: &'static CLIOptCall) -> CLIOpt {
+    CLIOpt {
+      word: String::from(word),
+      char: String::from(char),
+      strs: if !val_strs.is_empty() { val_strs.iter().map(|&val_str|String::from(val_str)).collect::<Vec<String>>() } else { Vec::new() },
+      desc: String::from(desc),
+      call: Box::new(call)
+    }
   }
 }
 
@@ -291,10 +291,10 @@ fn get_config() -> Config<'static> {
 
   /* set CLI options */
   let cli_options = [
-    get_cli_option("list", "l", &[], "print for each script in the source file its number and tag line label and data, skipping the save and run stages", &apply_cli_option_list),
-    get_cli_option("only", "o", &["SUBSET"], "include only scripts the numbers of which appear in SUBSET, comma-separated and/or in dash-indicated ranges, e.g. -o 1,3-5", &apply_cli_option_only),
-    get_cli_option("push", "p", &["LINE", "FILE"], "append to the source file LINE, auto-prefixed with a tag, followed by the content of FILE", &apply_cli_option_push),
-    get_cli_option("help", "h", &[], "show usage and a list of available flags then exit", &apply_cli_option_help)
+    CLIOpt::new("list", "l", &[], "print for each script in the source file its number and tag line label and data, skipping the save and run stages", &apply_cli_option_list),
+    CLIOpt::new("only", "o", &["SUBSET"], "include only scripts the numbers of which appear in SUBSET, comma-separated and/or in dash-indicated ranges, e.g. -o 1,3-5", &apply_cli_option_only),
+    CLIOpt::new("push", "p", &["LINE", "FILE"], "append to the source file LINE, auto-prefixed with a tag, followed by the content of FILE", &apply_cli_option_push),
+    CLIOpt::new("help", "h", &[], "show usage and a list of available flags then exit", &apply_cli_option_help)
   ];
 
   /* get CLI arguments and set count */

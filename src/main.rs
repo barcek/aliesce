@@ -329,7 +329,7 @@ fn update_config(mut config: Config<'static>, args: Vec<String>) -> Config<'stat
       };
     };
   };
-  args_count -= args_count;
+  args_count -= cli_options_count;
 
   /* set final source filename (incl. output basename) per positional arg */
   config.src = if args_count > 1 { String::from(args.last().unwrap()) } else { config.src };

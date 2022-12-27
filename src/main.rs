@@ -95,8 +95,14 @@ fn main() {
 
   let config_init = Config { src: String::from(SRC), tag: TAG, dir: DIR, opt_vals: HashMap::new() };
   let args_by_cli = env::args().collect();
+  let cli_options = Vec::from([
+    get_cli_option("list", "l", &[], "print for each script in the source file its number and tag line label and data, skipping the save and run stages", &apply_cli_option_list),
+    get_cli_option("only", "o", &["SUBSET"], "include only scripts the numbers of which appear in SUBSET, comma-separated and/or in dash-indicated ranges, e.g. -o 1,3-5", &apply_cli_option_only),
+    get_cli_option("push", "p", &["LINE", "FILE"], "append to the source file LINE, auto-prefixed with a tag, followed by the content of FILE", &apply_cli_option_push),
+    get_cli_option_help()
+  ]);
 
-  let config = update_config(config_init, args_by_cli);
+  let config = update_config(cli_options, config_init, args_by_cli, &apply_args_remaining);
 
   /* load script file content or exit early */
   fs::read_to_string(&config.src).unwrap_or_else(|_| panic!("read source file '{}'", config.src))
@@ -237,7 +243,9 @@ impl CLIOption {
   }
 }
 
-/* option applicators */
+type CLIArgHandler = dyn Fn(Config, Vec<String>) -> Config;
+
+/* argument applicators */
 
 fn apply_cli_option_list(_0: &Config, _1: &[CLIOption], _2: Vec<String>) -> CLIOptionVal {
   CLIOptionVal::Bool
@@ -297,22 +305,25 @@ fn apply_cli_option_help(_0: &Config, cli_options: &[CLIOption], _2: Vec<String>
   process::exit(0);
 }
 
-/* primary functions */
-
-fn get_cli_options() -> Vec<CLIOption> {
-  Vec::from([
-    CLIOption::new("list", "l", &[], "print for each script in the source file its number and tag line label and data, skipping the save and run stages", &apply_cli_option_list),
-    CLIOption::new("only", "o", &["SUBSET"], "include only scripts the numbers of which appear in SUBSET, comma-separated and/or in dash-indicated ranges, e.g. -o 1,3-5", &apply_cli_option_only),
-    CLIOption::new("push", "p", &["LINE", "FILE"], "append to the source file LINE, auto-prefixed with a tag, followed by the content of FILE", &apply_cli_option_push),
-    CLIOption::new("help", "h", &[], "show usage and a list of available flags then exit", &apply_cli_option_help)
-  ])
+fn apply_args_remaining(mut config: Config, args_remaining: Vec<String>) -> Config {
+  /* set final source filename (incl. output basename) per positional arg */
+  config.src = if !args_remaining.is_empty() { String::from(&args_remaining[0]) } else { config.src };
+  config
 }
 
-fn update_config(mut config: Config<'static>, args: Vec<String>) -> Config<'static> {
+/* primary functions */
 
-  /* set arg count and get CLI options */
-  let mut args_count: usize = args.len().try_into().unwrap();
-  let cli_options = get_cli_options();
+fn get_cli_option(word: &str, char: &str, strs: &[&str], desc: &str, call: &'static CLIOptionCall) -> CLIOption {
+  CLIOption::new(word, char, strs, desc, call)
+}
+
+fn get_cli_option_help() -> CLIOption {
+  CLIOption::new("help", "h", &[], "show usage and a list of available flags then exit", &apply_cli_option_help)
+}
+
+fn update_config(cli_options: Vec<CLIOption>, mut config: Config<'static>, args: Vec<String>, handle_remaining: &CLIArgHandler) -> Config<'static> {
+
+  let args_count: usize = args.len().try_into().unwrap();
 
   /* for each flag in args, queue CLI option call with any values and tally */
   let mut cli_options_queued = Vec::new();
@@ -329,10 +340,6 @@ fn update_config(mut config: Config<'static>, args: Vec<String>) -> Config<'stat
       };
     };
   };
-  args_count -= cli_options_count;
-
-  /* set final source filename (incl. output basename) per positional arg */
-  config.src = if args_count > 1 { String::from(args.last().unwrap()) } else { config.src };
 
   /* make any queued CLI option calls */
   if !cli_options_queued.is_empty() {
@@ -342,6 +349,10 @@ fn update_config(mut config: Config<'static>, args: Vec<String>) -> Config<'stat
       config.opt_vals.insert(word.to_string(), value);
     }
   }
+
+  /* handle any remaining arguments */
+  let args_remaining = args[(cli_options_count + 1)..].to_vec();
+  config = handle_remaining(config, args_remaining);
 
   config
 }

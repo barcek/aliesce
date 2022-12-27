@@ -3,6 +3,8 @@ use std::fs;
 use std::process;
 use std::collections::HashMap;
 
+use crate::args::{ CLIOption, update_config };
+
 /* DEFAULT VALUES */
 
 #[derive(Clone, Copy)]
@@ -18,6 +20,25 @@ pub static TAG: ScriptTag = ScriptTag { head: "###", tail: "#" };
 /* TRANSFORMATION */
 
 /* data structures */
+
+/* - configuration */
+
+#[derive(PartialEq, Eq)]
+pub enum ConfigMapVal {
+  Bool,
+  Ints(Vec<usize>)
+}
+
+pub type ConfigMap = HashMap<String, ConfigMapVal>;
+
+pub struct Config<'a> {
+  src: String,
+  tag: ScriptTag<'a>,
+  dir: &'a str,
+  map: ConfigMap
+}
+
+/* - consolidation */
 
 #[derive(Debug, PartialEq)]
 struct OutputFilePath {
@@ -45,7 +66,7 @@ enum Output {
 }
 
 #[derive(Debug, PartialEq)]
-struct  OutputFile {
+struct OutputFile {
   data: Vec<String>,
   code: String,
   path: OutputFilePath,
@@ -56,7 +77,7 @@ struct  OutputFile {
 impl OutputFile {
   fn new(data: Vec<String>, code: String, i: usize, config: &Config) -> OutputFile {
 
-    let Config { src, tag: _, dir, opt_vals: _ } = config;
+    let Config { src, tag: _, dir, map: _ } = config;
 
     /* set output path parts */
 
@@ -93,16 +114,16 @@ impl OutputFile {
 
 fn main() {
 
-  let config_init = Config { src: String::from(SRC), tag: TAG, dir: DIR, opt_vals: HashMap::new() };
+  let config_init = Config { src: String::from(SRC), tag: TAG, dir: DIR, map: HashMap::new() };
   let args_by_cli = env::args().collect();
   let cli_options = Vec::from([
-    get_cli_option("list", "l", &[], "print for each script in the source file its number and tag line label and data, skipping the save and run stages", &apply_cli_option_list),
-    get_cli_option("only", "o", &["SUBSET"], "include only scripts the numbers of which appear in SUBSET, comma-separated and/or in dash-indicated ranges, e.g. -o 1,3-5", &apply_cli_option_only),
-    get_cli_option("push", "p", &["LINE", "FILE"], "append to the source file LINE, auto-prefixed with a tag, followed by the content of FILE", &apply_cli_option_push),
-    get_cli_option_help()
+    CLIOption::new("list", "l", &[], "print for each script in the source file its number and tag line label and data, skipping the save and run stages", &apply_cli_option_list),
+    CLIOption::new("only", "o", &["SUBSET"], "include only scripts the numbers of which appear in SUBSET, comma-separated and/or in dash-indicated ranges, e.g. -o 1,3-5", &apply_cli_option_only),
+    CLIOption::new("push", "p", &["LINE", "FILE"], "append to the source file LINE, auto-prefixed with a tag, followed by the content of FILE", &apply_cli_option_push),
+    CLIOption::new_help()
   ]);
 
-  let config = update_config(cli_options, config_init, args_by_cli, &apply_args_remaining);
+  let config = update_config(config_init, cli_options, &apply_args_remaining, args_by_cli);
 
   /* load script file content or exit early */
   fs::read_to_string(&config.src).unwrap_or_else(|_| panic!("read source file '{}'", config.src))
@@ -113,9 +134,9 @@ fn main() {
     /* omit content preceding first item */
     .skip(1)
     /* use subset if only option selected */
-    .filter(|(i, _)| !config.opt_vals.contains_key("only") || match config.opt_vals.get("only").unwrap() {
-      CLIOptionVal::Ints(val_ints) => val_ints.contains(&(i)),
-      _                         => false
+    .filter(|(i, _)| !config.map.contains_key("only") || match config.map.get("only").unwrap() {
+      ConfigMapVal::Ints(val_ints) => val_ints.contains(&(i)),
+      _                            => false
     })
     /* parse each item to output variant */
     .map(|(i, script_plus_tag_line_part)| parse(script_plus_tag_line_part, &config, i))
@@ -125,7 +146,7 @@ fn main() {
 
 fn parse(script_plus_tag_line_part: &str, config: &Config, i: usize) -> Option<Output> {
 
-  let Config { src: _, tag, dir: _, opt_vals } = config;
+  let Config { src: _, tag, dir: _, map } = config;
 
   let mut lines = script_plus_tag_line_part.lines();
   let tag_line_part = lines.nth(0).unwrap();
@@ -139,7 +160,7 @@ fn parse(script_plus_tag_line_part: &str, config: &Config, i: usize) -> Option<O
   let tag_line_data  = tag_line_sections.1.trim();
 
   /* handle option selected - list */
-  if opt_vals.contains_key("list") { /* account for list option */
+  if map.contains_key("list") { /* account for list option */
     let join = if !tag_line_label.is_empty() { [tag_line_label, ":"].concat() } else { "".to_string() };
     let text = format!("{}:{} {}", i, join, tag_line_data);
     return Some(Output::Text(text));
@@ -202,69 +223,26 @@ fn exec(output: &OutputFile) {
     .wait_with_output().unwrap_or_else(|_| panic!("await output from '{}'", prog));
 }
 
-/* CONFIGURATION */
-
-/* data structures */
-
-struct Config<'a> {
-  src: String,
-  tag: ScriptTag<'a>,
-  dir: &'a str,
-  opt_vals: CLIOptionValMap
-}
-
-#[derive(PartialEq, Eq)]
-enum CLIOptionVal {
-  Bool,
-  Ints(Vec<usize>)
-}
-
-type CLIOptionValMap = HashMap<String, CLIOptionVal>;
-
-type CLIOptionCall = dyn Fn(&Config, &[CLIOption], Vec<String>) -> CLIOptionVal;
-
-struct CLIOption {
-  word: String,
-  char: String,
-  strs: Vec<String>,
-  desc: String,
-  call: Box<CLIOptionCall>
-}
-
-impl CLIOption {
-  fn new(word: &str, char: &str, val_strs: &[&str], desc: &str, call: &'static CLIOptionCall) -> CLIOption {
-    CLIOption {
-      word: String::from(word),
-      char: String::from(char),
-      strs: if !val_strs.is_empty() { val_strs.iter().map(|&val_str|String::from(val_str)).collect::<Vec<String>>() } else { Vec::new() },
-      desc: String::from(desc),
-      call: Box::new(call)
-    }
-  }
-}
-
-type CLIArgHandler = dyn Fn(Config, Vec<String>) -> Config;
-
 /* argument applicators */
 
-fn apply_cli_option_list(_0: &Config, _1: &[CLIOption], _2: Vec<String>) -> CLIOptionVal {
-  CLIOptionVal::Bool
+fn apply_cli_option_list(_0: &Config, _1: &[CLIOption], _2: Vec<String>) -> ConfigMapVal {
+  ConfigMapVal::Bool
 }
 
-fn apply_cli_option_only(_0: &Config, _1: &[CLIOption], strs: Vec<String>) -> CLIOptionVal {
+fn apply_cli_option_only(_0: &Config, _1: &[CLIOption], strs: Vec<String>) -> ConfigMapVal {
   let val_ints: Vec<usize> = strs[0].trim().split(',')
     .flat_map(|val_str| {
       let vals: Vec<usize> = val_str.trim().split('-').map(|item| item.parse::<usize>().expect("parse subset for option 'only'")).collect();
       if vals.len() > 1 { (vals[0]..(vals[1] + 1)).collect::<Vec<usize>>() } else { vals }
     })
     .collect();
-  CLIOptionVal::Ints(val_ints)
+  ConfigMapVal::Ints(val_ints)
 }
 
-fn apply_cli_option_push(config: &Config, _0: &[CLIOption], strs: Vec<String>) -> CLIOptionVal {
+fn apply_cli_option_push(config: &Config, _0: &[CLIOption], strs: Vec<String>) -> ConfigMapVal {
 
   let script_filename = &strs[1];
-  let Config { src, tag, dir: _, opt_vals: _ } = config;
+  let Config { src, tag, dir: _, map: _ } = config;
 
   let script = fs::read_to_string(script_filename).unwrap_or_else(|_| panic!("read script file '{}'", script_filename));
   let script_plus_tag_line = format!("\n{} {}\n\n{}", tag.head, strs[0], script);
@@ -276,85 +254,117 @@ fn apply_cli_option_push(config: &Config, _0: &[CLIOption], strs: Vec<String>) -
   process::exit(0);
 }
 
-fn apply_cli_option_help(_0: &Config, cli_options: &[CLIOption], _2: Vec<String>) -> CLIOptionVal {
-
-  /* set value substrings and max length */
-  let val_strs = cli_options.iter()
-    .map(|cli_option| cli_option.strs.join(" "))
-    .collect::<Vec<String>>();
-  let val_strs_max = val_strs.iter()
-    .fold(0, |acc, val_str| if val_str.len() > acc { val_str.len() } else { acc });
-
-  /* generate usage line */
-  let usage_part = cli_options.iter()
-    .filter(|cli_option| cli_option.word != "help") /* avoid duplication */
-    .enumerate() /* yield also index (i) */
-    .map(|(i, cli_option)| format!("[--{}/-{}{}]", cli_option.word, cli_option.char, if val_strs.is_empty() { "".to_owned() } else { " ".to_owned() + &val_strs[i] }))
-    .collect::<Vec<String>>()
-    .join(" ");
-  let usage_line = format!("Usage: aliesce [--help/-h / {} [src]]", usage_part);
-
-  /* generate flags list */
-  let flags_list = cli_options.iter()
-    .enumerate() /* yield also index (i) */
-    .map(|(i, cli_option)| format!(" -{}, --{}  {:w$}  {}", cli_option.char, cli_option.word, val_strs[i], cli_option.desc, w = val_strs_max))
-    .collect::<Vec<String>>()
-    .join("\n");
-
-  println!("{}\n{}\n{}", usage_line, String::from("Flags:"), flags_list);
-  process::exit(0);
-}
-
 fn apply_args_remaining(mut config: Config, args_remaining: Vec<String>) -> Config {
   /* set final source filename (incl. output basename) per positional arg */
   config.src = if !args_remaining.is_empty() { String::from(&args_remaining[0]) } else { config.src };
   config
 }
 
-/* primary functions */
+/* ARGUMENT HANDLING */
 
-fn get_cli_option(word: &str, char: &str, strs: &[&str], desc: &str, call: &'static CLIOptionCall) -> CLIOption {
-  CLIOption::new(word, char, strs, desc, call)
-}
+mod args {
 
-fn get_cli_option_help() -> CLIOption {
-  CLIOption::new("help", "h", &[], "show usage and a list of available flags then exit", &apply_cli_option_help)
-}
+  use std::process;
+  use super::{ Config, ConfigMapVal };
 
-fn update_config(cli_options: Vec<CLIOption>, mut config: Config<'static>, args: Vec<String>, handle_remaining: &CLIArgHandler) -> Config<'static> {
+  /* data structures */
 
-  let args_count: usize = args.len().try_into().unwrap();
+  type CLIOptionCall = dyn Fn(&Config, &[CLIOption], Vec<String>) -> ConfigMapVal;
 
-  /* for each flag in args, queue CLI option call with any values and tally */
-  let mut cli_options_queued = Vec::new();
-  let mut cli_options_count = 0;
-  if args_count > 1 {
-    for cli_option in &cli_options {
-      for j in 1..args_count {
-        if "--".to_owned() + &cli_option.word == args[j] || "-".to_owned() + &cli_option.char == args[j] {
-          let strs_len = cli_option.strs.len();
-          let strs = args[(j + 1)..(j + strs_len + 1)].to_vec();
-          cli_options_queued.push((&cli_option.word, &cli_option.call, strs));
-          cli_options_count = cli_options_count + 1 + strs_len;
-        };
-      };
-    };
-  };
+  pub struct CLIOption {
+    word: String,
+    char: String,
+    strs: Vec<String>,
+    desc: String,
+    call: Box<CLIOptionCall>
+  }
 
-  /* make any queued CLI option calls */
-  if !cli_options_queued.is_empty() {
-    for opt_queued in &cli_options_queued {
-      let (word, call, strs) = &opt_queued;
-      let value = call(&config, &cli_options, strs.to_vec());
-      config.opt_vals.insert(word.to_string(), value);
+  impl CLIOption {
+    pub fn new(word: &str, char: &str, val_strs: &[&str], desc: &str, call: &'static CLIOptionCall) -> CLIOption {
+      CLIOption {
+        word: String::from(word),
+        char: String::from(char),
+        strs: if !val_strs.is_empty() { val_strs.iter().map(|&val_str|String::from(val_str)).collect::<Vec<String>>() } else { Vec::new() },
+        desc: String::from(desc),
+        call: Box::new(call)
+      }
+    }
+
+    pub fn new_help() -> CLIOption {
+      CLIOption::new("help", "h", &[], "show usage and a list of available flags then exit", &apply_cli_option_help)
     }
   }
 
-  /* handle any remaining arguments */
-  let args_remaining = args[(cli_options_count + 1)..].to_vec();
-  config = handle_remaining(config, args_remaining);
+  type CLIArgHandler = dyn Fn(Config, Vec<String>) -> Config;
 
-  config
+  /* argument applicator */
+
+  fn apply_cli_option_help(_0: &Config, cli_options: &[CLIOption], _2: Vec<String>) -> ConfigMapVal {
+
+    /* set value substrings and max length */
+    let val_strs = cli_options.iter()
+      .map(|cli_option| cli_option.strs.join(" "))
+      .collect::<Vec<String>>();
+    let val_strs_max = val_strs.iter()
+      .fold(0, |acc, val_str| if val_str.len() > acc { val_str.len() } else { acc });
+
+    /* generate usage line */
+    let usage_part = cli_options.iter()
+      .filter(|cli_option| cli_option.word != "help") /* avoid duplication */
+      .enumerate() /* yield also index (i) */
+      .map(|(i, cli_option)| format!("[--{}/-{}{}]", cli_option.word, cli_option.char, if val_strs.is_empty() { "".to_owned() } else { " ".to_owned() + &val_strs[i] }))
+      .collect::<Vec<String>>()
+      .join(" ");
+    let usage_line = format!("Usage: aliesce [--help/-h / {} [src]]", usage_part);
+
+    /* generate flags list */
+    let flags_list = cli_options.iter()
+      .enumerate() /* yield also index (i) */
+      .map(|(i, cli_option)| format!(" -{}, --{}  {:w$}  {}", cli_option.char, cli_option.word, val_strs[i], cli_option.desc, w = val_strs_max))
+      .collect::<Vec<String>>()
+      .join("\n");
+
+    println!("{}\n{}\n{}", usage_line, String::from("Flags:"), flags_list);
+    process::exit(0);
+  }
+
+  /* primary functions */
+
+  pub fn update_config(mut config: Config<'static>, cli_options: Vec<CLIOption>, handle_remaining: &CLIArgHandler, args: Vec<String>) -> Config<'static> {
+
+    let args_count: usize = args.len().try_into().unwrap();
+
+    /* for each flag in args, queue CLI option call with any values and tally */
+    let mut cli_options_queued = Vec::new();
+    let mut cli_options_count = 0;
+    if args_count > 1 {
+      for cli_option in &cli_options {
+        for j in 1..args_count {
+          if "--".to_owned() + &cli_option.word == args[j] || "-".to_owned() + &cli_option.char == args[j] {
+            let strs_len = cli_option.strs.len();
+            let strs = args[(j + 1)..(j + strs_len + 1)].to_vec();
+            cli_options_queued.push((&cli_option.word, &cli_option.call, strs));
+            cli_options_count = cli_options_count + 1 + strs_len;
+          };
+        };
+      };
+    };
+
+    /* make any queued CLI option calls */
+    if !cli_options_queued.is_empty() {
+      for opt_queued in &cli_options_queued {
+        let (word, call, strs) = &opt_queued;
+        let value = call(&config, &cli_options, strs.to_vec());
+        config.map.insert(word.to_string(), value);
+      }
+    }
+
+    /* handle any remaining arguments */
+    let args_remaining = args[(cli_options_count + 1)..].to_vec();
+    config = handle_remaining(config, args_remaining);
+
+    config
+  }
 }
 
 /* UNIT TESTS */
@@ -363,7 +373,7 @@ fn update_config(cli_options: Vec<CLIOption>, mut config: Config<'static>, args:
 mod test {
 
   use::std::collections::HashMap;
-  use super::{ ScriptTag, Config, CLIOptionVal, Output, OutputFilePath, OutputFileInit, OutputFile, parse };
+  use super::{ ScriptTag, Config, ConfigMapVal, Output, OutputFilePath, OutputFileInit, OutputFile, parse };
 
   fn get_values_parse() -> (Config<'static>, usize, String, OutputFilePath, OutputFileInit) {
 
@@ -371,13 +381,13 @@ mod test {
     let src_basename_default_str = src_default_str.split(".").nth(0).unwrap();
     let tag_default = ScriptTag { head: "###", tail: "#" };
     let dir_default_str = "scripts";
-    let opt_vals_default = HashMap::new();
+    let map_default = HashMap::new();
 
     let config_default = Config {
       src: String::from(src_default_str),
       tag: tag_default,
       dir: dir_default_str,
-      opt_vals: opt_vals_default
+      map: map_default
     };
 
     /* base test script values */
@@ -429,7 +439,7 @@ mod test {
     let (mut config_default, i, _, _, _) = get_values_parse();
     let script_plus_tag_line_part = " ext program --flag value\n\n//code";
 
-    config_default.opt_vals.insert("list".to_string(), CLIOptionVal::Bool);
+    config_default.map.insert("list".to_string(), ConfigMapVal::Bool);
 
     let expected = Option::Some(Output::Text(String::from("1: ext program --flag value")));
     let obtained = parse(script_plus_tag_line_part, &config_default, i);

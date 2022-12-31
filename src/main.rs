@@ -26,7 +26,8 @@ pub static TAG: ScriptTag = ScriptTag { head: "###", tail: "#" };
 #[derive(PartialEq, Eq)]
 pub enum ConfigMapVal {
   Bool,
-  Ints(Vec<usize>)
+  Ints(Vec<usize>),
+  Strs(Vec<String>)
 }
 
 pub type ConfigMap = HashMap<String, ConfigMapVal>;
@@ -77,7 +78,7 @@ struct OutputFile {
 impl OutputFile {
   fn new(data: Vec<String>, code: String, i: usize, config: &Config) -> OutputFile {
 
-    let Config { src, tag: _, dir, map: _ } = config;
+    let Config { src, tag: _, dir, map } = config;
 
     /* set output path parts */
 
@@ -87,8 +88,17 @@ impl OutputFile {
     let parts_filename = parts_path.split_off(parts_path.len() - 1).last().unwrap().split('.').collect::<Vec<&str>>();
     let p_f_len = parts_filename.len();
 
-    /* set as dir either remaining output path parts recombined or default dir */
-    let dir = if !parts_path.is_empty() { parts_path.join("/") } else { dir.to_string() };
+    /* set as dir either remaining output path parts recombined, any dest option value or default dir */
+    let dir = if !parts_path.is_empty() {
+      parts_path.join("/")
+    } else if map.contains_key("dest") {
+      match config.map.get("dest").unwrap() {
+        ConfigMapVal::Strs(val_strs) => val_strs[0].to_owned(),
+        _                            => dir.to_string()
+      }
+    } else {
+      dir.to_string()
+    };
     /* set as basename either all but last output filename part or src basename */
     let basename = if p_f_len > 1 { parts_filename[..(p_f_len - 1)].join(".") } else { src.split('.').nth(0).unwrap().to_string() };
     /* set as ext last output filename part */
@@ -117,6 +127,7 @@ fn main() {
   let config_init = Config { src: String::from(SRC), tag: TAG, dir: DIR, map: HashMap::new() };
   let args_by_cli = env::args().collect();
   let cli_options = Vec::from([
+    CLIOption::new("dest", "d", &["DIR"], "set the default output directory to DIR", &apply_cli_option_dest),
     CLIOption::new("list", "l", &[], "print for each script in the source file its number and tag line label and data, skipping the save and run stages", &apply_cli_option_list),
     CLIOption::new("only", "o", &["SUBSET"], "include only scripts the numbers of which appear in SUBSET, comma-separated and/or in dash-indicated ranges, e.g. -o 1,3-5", &apply_cli_option_only),
     CLIOption::new("push", "p", &["LINE", "FILE"], "append to the source file LINE, auto-prefixed with a tag, followed by the content of FILE", &apply_cli_option_push),
@@ -224,6 +235,10 @@ fn exec(output: &OutputFile) {
 }
 
 /* argument applicators */
+
+fn apply_cli_option_dest(_0: &Config, _1: &[CLIOption], strs: Vec<String>) -> ConfigMapVal {
+  ConfigMapVal::Strs(Vec::from(strs))
+}
 
 fn apply_cli_option_list(_0: &Config, _1: &[CLIOption], _2: Vec<String>) -> ConfigMapVal {
   ConfigMapVal::Bool

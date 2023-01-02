@@ -64,7 +64,7 @@ The script files are saved and run in order of appearance in the source file.
 
 #### Specifying paths
 
-The basename of the output file will be the basename of the source file, i.e. 'src' by default. The file is saved by default to a folder in the current directory named `scripts`, which is created if not present.
+The basename of the output file will be the basename of the source file, i.e. 'src' by default. The file is saved by default to a folder in the current directory named `scripts`, which is created if not present. This default directory can be overridden via the command line (see [Options](#options) below).
 
 For an output file named 'script.exs', the following would be used:
 
@@ -72,10 +72,16 @@ For an output file named 'script.exs', the following would be used:
 ### script.exs elixir -r setup
 ```
 
-For an output directory named 'output' holding 'script.exs':
+For an output directory named 'elixir' holding 'script.exs':
 
 ```
-### output/script.exs elixir -r setup
+### elixir/script.exs elixir -r setup
+```
+
+For a subdirectory within the default or overridden output directory, a placeholder can be used, by default `>`. For an output path of 'scripts/elixir/script.exs', i.e. with the default output directory name and the subdirectory and script named as above:
+
+```
+### >/elixir/script.exs elixir -r setup
 ```
 
 #### Avoiding stages
@@ -108,6 +114,7 @@ Spacing between tag head and tail is retained for list entries (see [Options](#o
 
 The following can be passed to `aliesce` before any source file name:
 
+- `--dest` / `-d`  `DIR`, to set the default output directory to `DIR`
 - `--list` / `-l`, to print for each script in the source file its number and tag line label and data, skipping the save and run stages
 - `--only` / `-o`  `SUBSET`, to include only scripts the numbers of which appear in `SUBSET`, comma-separated and/or in dash-indicated ranges, e.g. `-o 1,3-5`
 - `--push` / `-p`  `LINE` `FILE`, to append to the source file `LINE`, auto-prefixed with a tag, followed by the content of `FILE`

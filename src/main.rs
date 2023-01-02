@@ -13,9 +13,15 @@ pub struct ScriptTag<'a> {
   tail: &'a str
 }
 
+#[derive(Clone, Copy)]
+pub struct OutputDir<'a> {
+  name: &'a str,
+  mark: &'a str
+}
+
 pub static SRC: &str = "src.txt"; /* source filename (incl. output basename) */
-pub static DIR: &str = "scripts"; /* output directory */
-pub static TAG: ScriptTag = ScriptTag { head: "###", tail: "#" };
+pub static TAG: ScriptTag = ScriptTag { head: "###", tail: "#" }; /* tag line opener and optional label closer */
+pub static DIR: OutputDir = OutputDir { name: "scripts", mark: ">" }; /* output directory name and placeholder */
 
 /* TRANSFORMATION */
 
@@ -35,7 +41,7 @@ pub type ConfigMap = HashMap<String, ConfigMapVal>;
 pub struct Config<'a> {
   src: String,
   tag: ScriptTag<'a>,
-  dir: &'a str,
+  dir: OutputDir<'a>,
   map: ConfigMap
 }
 
@@ -84,21 +90,23 @@ impl OutputFile {
 
     /* get output path parts - break first data item on '/' */
     let mut parts_path = data.get(0).unwrap().split('/').collect::<Vec<&str>>();
+
+    /* handle option selected - dest */
+    let dirname = if !map.contains_key("dest") { dir.name } else {
+      match config.map.get("dest").unwrap() {
+        ConfigMapVal::Strs(val_strs) => val_strs[0].as_str(),
+        _                            => dir.name
+      }
+    };
+
+    /* handle output directory identified by directory placeholder */
+    if dir.mark == parts_path[0] { parts_path[0] = dirname };
     /* get output filename parts - separate last output path part and break on '.' */
     let parts_filename = parts_path.split_off(parts_path.len() - 1).last().unwrap().split('.').collect::<Vec<&str>>();
     let p_f_len = parts_filename.len();
 
-    /* set as dir either remaining output path parts recombined, any dest option value or default dir */
-    let dir = if !parts_path.is_empty() {
-      parts_path.join("/")
-    } else if map.contains_key("dest") {
-      match config.map.get("dest").unwrap() {
-        ConfigMapVal::Strs(val_strs) => val_strs[0].to_owned(),
-        _                            => dir.to_string()
-      }
-    } else {
-      dir.to_string()
-    };
+    /* set as dir either remaining output path parts recombined or directory name */
+    let dir = if !parts_path.is_empty() { parts_path.join("/") } else { dirname.to_string() };
     /* set as basename either all but last output filename part or src basename */
     let basename = if p_f_len > 1 { parts_filename[..(p_f_len - 1)].join(".") } else { src.split('.').nth(0).unwrap().to_string() };
     /* set as ext last output filename part */
@@ -388,20 +396,24 @@ mod args {
 mod test {
 
   use::std::collections::HashMap;
-  use super::{ ScriptTag, Config, ConfigMapVal, Output, OutputFilePath, OutputFileInit, OutputFile, parse };
+  use super::{ ScriptTag, OutputDir, Config, ConfigMapVal, Output, OutputFilePath, OutputFileInit, OutputFile, parse };
 
   fn get_values_parse() -> (Config<'static>, usize, String, OutputFilePath, OutputFileInit) {
 
     let src_default_str = "src.txt";
     let src_basename_default_str = src_default_str.split(".").nth(0).unwrap();
+
     let tag_default = ScriptTag { head: "###", tail: "#" };
+
     let dir_default_str = "scripts";
+    let dir_default = OutputDir { name: dir_default_str, mark: ">" };
+
     let map_default = HashMap::new();
 
     let config_default = Config {
       src: String::from(src_default_str),
       tag: tag_default,
-      dir: dir_default_str,
+      dir: dir_default,
       map: map_default
     };
 
@@ -491,7 +503,7 @@ mod test {
 
     let data = Vec::from(["script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
-    let dir = String::from(config_default.dir);
+    let dir = String::from(config_default.dir.name);
     let basename = String::from("script");
     let ext = String::from("ext");
     let path = OutputFilePath { dir, basename, ext };
@@ -510,7 +522,7 @@ mod test {
 
     let data = Vec::from(["script.suffix1.suffix2.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
-    let dir = String::from(config_default.dir);
+    let dir = String::from(config_default.dir.name);
     let basename = String::from("script.suffix1.suffix2");
     let ext = String::from("ext");
     let path = OutputFilePath { dir, basename, ext };
@@ -530,6 +542,25 @@ mod test {
     let data = Vec::from(["dir/script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
     let dir = String::from("dir");
+    let basename = String::from("script");
+    let ext = String::from("ext");
+    let path = OutputFilePath { dir, basename, ext };
+
+    let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
+    let obtained = parse(script_plus_tag_line_part, &config_default, i);
+
+    assert_eq!(expected, obtained);
+  }
+
+  #[test]
+  fn parse_returns_for_tag_data_full_incl_output_dir_placeholder_some_output_file() {
+
+    let (config_default, i, code, _, init) = get_values_parse();
+    let script_plus_tag_line_part = " >/script.ext program --flag value\n\n//code";
+
+    let data = Vec::from([">/script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
+
+    let dir = String::from("scripts");
     let basename = String::from("script");
     let ext = String::from("ext");
     let path = OutputFilePath { dir, basename, ext };

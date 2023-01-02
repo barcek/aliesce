@@ -429,7 +429,7 @@ mod test {
     let script_plus_tag_line_part = " ext program --flag value\n\n//code";
     let data = Vec::from(["ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
-    let expected = Option::Some(Output::File(OutputFile { data, code, path: path, init: init, i }));
+    let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
     let obtained = parse(script_plus_tag_line_part, &config_default, i);
 
     assert_eq!(expected, obtained);
@@ -442,7 +442,28 @@ mod test {
     let script_plus_tag_line_part = " label # ext program --flag value\n\n//code";
     let data = Vec::from(["ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
-    let expected = Option::Some(Output::File(OutputFile { data, code, path: path, init: init, i }));
+    let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
+    let obtained = parse(script_plus_tag_line_part, &config_default, i);
+
+    assert_eq!(expected, obtained);
+  }
+
+  #[test]
+  fn parse_returns_for_dest_option_some_output_file() {
+
+    let (mut config_default, i, code, _, init) = get_values_parse();
+    let script_plus_tag_line_part = " ext program --flag value\n\n//code";
+
+    let data = Vec::from(["ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
+
+    let dir = String::from("dest");
+    let basename = String::from(config_default.src.split(".").nth(0).unwrap());
+    let ext = String::from("ext");
+    let path = OutputFilePath { dir, basename, ext };
+
+    config_default.map.insert("dest".to_string(), ConfigMapVal::Strs(Vec::from([String::from("dest")])));
+
+    let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
     let obtained = parse(script_plus_tag_line_part, &config_default, i);
 
     assert_eq!(expected, obtained);
@@ -467,6 +488,7 @@ mod test {
 
     let (config_default, i, code, _, init) = get_values_parse();
     let script_plus_tag_line_part = " script.ext program --flag value\n\n//code";
+
     let data = Vec::from(["script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
     let dir = String::from(config_default.dir);
@@ -474,7 +496,7 @@ mod test {
     let ext = String::from("ext");
     let path = OutputFilePath { dir, basename, ext };
 
-    let expected = Option::Some(Output::File(OutputFile { data, code, path: path, init: init, i }));
+    let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
     let obtained = parse(script_plus_tag_line_part, &config_default, i);
 
     assert_eq!(expected, obtained);
@@ -485,6 +507,7 @@ mod test {
 
     let (config_default, i, code, _, init) = get_values_parse();
     let script_plus_tag_line_part = " script.suffix1.suffix2.ext program --flag value\n\n//code";
+
     let data = Vec::from(["script.suffix1.suffix2.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
     let dir = String::from(config_default.dir);
@@ -492,7 +515,7 @@ mod test {
     let ext = String::from("ext");
     let path = OutputFilePath { dir, basename, ext };
 
-    let expected = Option::Some(Output::File(OutputFile { data, code, path: path, init: init, i }));
+    let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
     let obtained = parse(script_plus_tag_line_part, &config_default, i);
 
     assert_eq!(expected, obtained);
@@ -503,6 +526,7 @@ mod test {
 
     let (config_default, i, code, _, init) = get_values_parse();
     let script_plus_tag_line_part = " dir/script.ext program --flag value\n\n//code";
+
     let data = Vec::from(["dir/script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
     let dir = String::from("dir");
@@ -510,7 +534,7 @@ mod test {
     let ext = String::from("ext");
     let path = OutputFilePath { dir, basename, ext };
 
-    let expected = Option::Some(Output::File(OutputFile { data, code, path: path, init: init, i }));
+    let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
     let obtained = parse(script_plus_tag_line_part, &config_default, i);
 
     assert_eq!(expected, obtained);
@@ -521,13 +545,14 @@ mod test {
 
     let (config_default, i, code, path, _) = get_values_parse();
     let script_plus_tag_line_part = " ext\n\n//code";
+
     let data = Vec::from(["ext".to_string()]);
 
     let prog = String::from("?");
     let args = Vec::from([]);
     let init = OutputFileInit { prog, args };
 
-    let expected = Option::Some(Output::File(OutputFile { data, code, path: path, init: init, i }));
+    let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
 
     let obtained = parse(script_plus_tag_line_part, &config_default, i);
 

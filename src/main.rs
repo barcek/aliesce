@@ -91,7 +91,7 @@ impl OutputFile {
     /* get output path parts - break first data item on '/' */
     let mut parts_path = data.get(0).unwrap().split('/').collect::<Vec<&str>>();
 
-    /* handle option selected - dest */
+    /* handle option - dest - update output directory name */
     let dirname = if !map.contains_key("dest") { dir.name } else {
       match config.map.get("dest").unwrap() {
         ConfigMapVal::Strs(val_strs) => val_strs[0].as_str(),
@@ -133,7 +133,7 @@ impl OutputFile {
 fn main() {
 
   let config_init = Config { src: String::from(SRC), tag: TAG, dir: DIR, map: HashMap::new() };
-  let args_by_cli = env::args().collect();
+  let args_by_cli = env::args().skip(1).collect::<Vec<String>>();
   let cli_options = Vec::from([
     CLIOption::new("dest", "d", &["DIR"], "set the default output directory to DIR", &apply_cli_option_dest),
     CLIOption::new("list", "l", &[], "print for each script in the source file its number and tag line label and data, skipping the save and run stages", &apply_cli_option_list),
@@ -142,23 +142,27 @@ fn main() {
     CLIOption::new_help()
   ]);
 
-  let config = update_config(config_init, cli_options, &apply_args_remaining, args_by_cli);
+  let config_base = update_config(config_init, &cli_options, &apply_args_remaining, args_by_cli);
 
   /* load script file content or exit early */
-  fs::read_to_string(&config.src).unwrap_or_else(|_| panic!("read source file '{}'", config.src))
-    /* get each script with tag line minus tag head */
-    .split(config.tag.head)
-    /* yield also index (i) for each item */
-    .enumerate()
-    /* omit content preceding first item */
-    .skip(1)
-    /* use subset if only option selected */
-    .filter(|(i, _)| !config.map.contains_key("only") || match config.map.get("only").unwrap() {
+  let content_whole = fs::read_to_string(&config_base.src).unwrap_or_else(|_| panic!("read source file '{}'", config_base.src));
+  /* get args section plus each script with tag line minus tag head, numbered */
+  let content_parts = content_whole.split(config_base.tag.head).enumerate().collect::<Vec<(usize, &str)>>();
+
+  /* update config to encompass args section */
+  let args_in_src = content_parts[0].1.split(' ').map(|part| part.trim().to_string()).filter(|part| part != "").collect::<Vec<String>>();
+  let config_full = update_config(config_base, &cli_options, &apply_args_remaining, args_in_src);
+
+  /* process each script plus tag line part */
+  content_parts[1..].iter()
+    .map(|(i, script_plus_tag_line_part)| (i, script_plus_tag_line_part, &config_full))
+    /* handle option - only - use subset */
+    .filter(|(i, _, config)| !config.map.contains_key("only") || match config.map.get("only").unwrap() {
       ConfigMapVal::Ints(val_ints) => val_ints.contains(&(i)),
       _                            => false
     })
     /* parse each item to output variant */
-    .map(|(i, script_plus_tag_line_part)| parse(script_plus_tag_line_part, &config, i))
+    .map(|(i, script_plus_tag_line_part, config)| parse(script_plus_tag_line_part, config, *i))
     /* print or save and run each variant */
     .for_each(apply)
 }
@@ -178,8 +182,8 @@ fn parse(script_plus_tag_line_part: &str, config: &Config, i: usize) -> Option<O
   let tag_line_label = tag_line_sections.0.split(tag.tail).nth(0).unwrap(); /* untrimmed */
   let tag_line_data  = tag_line_sections.1.trim();
 
-  /* handle option selected - list */
-  if map.contains_key("list") { /* account for list option */
+  /* handle option - list - print only */
+  if map.contains_key("list") {
     let join = if !tag_line_label.is_empty() { [tag_line_label, ":"].concat() } else { "".to_string() };
     let text = format!("{}:{} {}", i, join, tag_line_data);
     return Some(Output::Text(text));
@@ -353,16 +357,16 @@ mod args {
 
   /* primary functions */
 
-  pub fn update_config(mut config: Config<'static>, cli_options: Vec<CLIOption>, handle_remaining: &CLIArgHandler, args: Vec<String>) -> Config<'static> {
+  pub fn update_config(mut config: Config<'static>, cli_options: &Vec<CLIOption>, handle_remaining: &CLIArgHandler, args: Vec<String>) -> Config<'static> {
 
     let args_count: usize = args.len().try_into().unwrap();
 
     /* for each flag in args, queue CLI option call with any values and tally */
     let mut cli_options_queued = Vec::new();
     let mut cli_options_count = 0;
-    if args_count > 1 {
-      for cli_option in &cli_options {
-        for j in 1..args_count {
+    if args_count > 0 {
+      for cli_option in cli_options {
+        for j in 0..args_count {
           if "--".to_owned() + &cli_option.word == args[j] || "-".to_owned() + &cli_option.char == args[j] {
             let strs_len = cli_option.strs.len();
             let strs = args[(j + 1)..(j + strs_len + 1)].to_vec();
@@ -383,7 +387,7 @@ mod args {
     }
 
     /* handle any remaining arguments */
-    let args_remaining = args[(cli_options_count + 1)..].to_vec();
+    let args_remaining = args[(cli_options_count)..].to_vec();
     config = handle_remaining(config, args_remaining);
 
     config

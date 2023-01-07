@@ -8,20 +8,20 @@ use crate::args::{ CLIOption, update_config };
 /* DEFAULT VALUES */
 
 #[derive(Clone, Copy)]
-pub struct ScriptTag<'a> {
+struct ScriptTag<'a> {
   head: &'a str,
   tail: &'a str
 }
 
 #[derive(Clone, Copy)]
-pub struct OutputDir<'a> {
+struct OutputDir<'a> {
   name: &'a str,
   mark: &'a str
 }
 
-pub static SRC: &str = "src.txt"; /* source filename (incl. output basename) */
-pub static TAG: ScriptTag = ScriptTag { head: "###", tail: "#" }; /* tag line opener and optional label closer */
-pub static DIR: OutputDir = OutputDir { name: "scripts", mark: ">" }; /* output directory name and placeholder */
+static SRC: &str = "src.txt"; /* source filename (incl. output basename) */
+static TAG: ScriptTag = ScriptTag { head: "###", tail: "#" }; /* tag line opener and optional label closer */
+static DIR: OutputDir = OutputDir { name: "scripts", mark: ">" }; /* output directory name and placeholder */
 
 /* TRANSFORMATION */
 

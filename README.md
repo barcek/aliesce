@@ -120,6 +120,12 @@ The following can be passed to `aliesce` before any source file name:
 - `--push` / `-p`  `LINE` `FILE`, to append to the source file `LINE`, auto-prefixed with a tag, followed by the content of `FILE`
 - `--help` / `-h`, to show usage and a list of available flags then exit
 
+### Provision in-file
+
+Any or all of the options can also be selected via the source file by including the arguments above the initial tag line. The arguments will be processed when the file is handled by aliesce, avoiding the need to include them after the `aliesce` command.
+
+Arguments passed directly on the command line will be processed first, followed by those in the file, with the latter overriding the former in the event that an option is selected using both approaches.
+
 ## Getting started
 
 The `dir`, `src` and `tag` defaults are defined close to the top of the source file, i.e. 'src/main.rs', should you prefer to modify any pre-compilation.

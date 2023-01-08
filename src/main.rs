@@ -142,7 +142,7 @@ fn main() {
     CLIOption::new_help()
   ]);
 
-  let config_base = update_config(config_init, &cli_options, &apply_args_remaining, args_by_cli);
+  let config_base = update_config(config_init, &cli_options, &apply_args_remaining_cli, args_by_cli);
 
   /* load script file content or exit early */
   let content_whole = fs::read_to_string(&config_base.src).unwrap_or_else(|_| panic!("read source file '{}'", config_base.src));
@@ -151,7 +151,7 @@ fn main() {
 
   /* update config to encompass args section */
   let args_in_src = content_parts[0].1.split(' ').map(|part| part.trim().to_string()).filter(|part| part != "").collect::<Vec<String>>();
-  let config_full = update_config(config_base, &cli_options, &apply_args_remaining, args_in_src);
+  let config_full = update_config(config_base, &cli_options, &apply_args_remaining_src, args_in_src);
 
   /* process each script plus tag line part */
   content_parts[1..].iter()
@@ -281,9 +281,13 @@ fn apply_cli_option_push(config: &Config, _0: &[CLIOption], strs: Vec<String>) -
   process::exit(0);
 }
 
-fn apply_args_remaining(mut config: Config, args_remaining: Vec<String>) -> Config {
+fn apply_args_remaining_cli(mut config: Config, args_remaining: Vec<String>) -> Config {
   /* set final source filename (incl. output basename) per positional arg */
   config.src = if !args_remaining.is_empty() { String::from(&args_remaining[0]) } else { config.src };
+  config
+}
+
+fn apply_args_remaining_src(config: Config, _: Vec<String>) -> Config {
   config
 }
 

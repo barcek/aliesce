@@ -150,7 +150,7 @@ fn main() {
   let content_parts = content_whole.split(config_base.tag.head).enumerate().collect::<Vec<(usize, &str)>>();
 
   /* update config to encompass args section */
-  let args_in_src = content_parts[0].1.split(' ').map(|part| part.trim().to_string()).filter(|part| part != "").collect::<Vec<String>>();
+  let args_in_src = content_parts[0].1.split_whitespace().map(|part| part.trim().to_string()).filter(|part| part != "").collect::<Vec<String>>();
   let config_full = update_config(config_base, &cli_options, &apply_args_remaining_src, args_in_src);
 
   /* process each script plus tag line part */

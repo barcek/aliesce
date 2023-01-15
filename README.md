@@ -11,6 +11,7 @@ Write, save and run scripts in multiple languages from a single source file.
     - [Avoiding stages](#avoiding-stages)
     - [Labelling scripts](#labelling-scripts)
 - [Options](#options)
+  - [Provision in-file](#provision-in-file)
 - [Getting started](#getting-started)
 - [Making changes](#making-changes)
   - [Tests](#tests)
@@ -122,9 +123,11 @@ The following can be passed to `aliesce` before any source file name:
 
 ### Provision in-file
 
-Any or all of the options can also be selected via the source file by including the arguments above the initial tag line. The arguments will be processed when the file is handled by aliesce, avoiding the need to include them after the `aliesce` command.
+Any or all of the options above can also be selected by providing their arguments in the source file itself, avoiding the need to list them with each use of the `aliesce` command.
 
-Arguments passed directly on the command line will be processed first, followed by those in the file, with the latter overriding the former in the event that an option is selected using both approaches.
+Arguments provided in-file are simply placed above the initial tag line, arranged in the usual order, whether on a single line or multiple. They are processed each time the file is handled by aliesce.
+
+Arguments passed directly on the command line are processed first, followed by those in the file, with the latter overriding the former in the event that an option is selected using both approaches.
 
 ## Getting started
 

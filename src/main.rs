@@ -142,10 +142,11 @@ fn main() {
 
   let args_on_cli = env::args().skip(1).collect::<Vec<String>>();
   let cli_options = Vec::from([
-    CLIOption::new("dest", "d", &["DIR"], "set the default output directory to DIR", &apply_cli_option_dest),
+    CLIOption::new("dest", "d", &["DIR"], &*format!("set the default output directory (currently '{}') to DIR", DIR.name), &apply_cli_option_dest),
     CLIOption::new("list", "l", &[], "print for each script in the source file its number and tag line label and data, skipping the save and run stages", &apply_cli_option_list),
     CLIOption::new("only", "o", &["SUBSET"], "include only scripts the numbers of which appear in SUBSET, comma-separated and/or in dash-indicated ranges, e.g. -o 1,3-5", &apply_cli_option_only),
-    CLIOption::new("push", "p", &["LINE", "FILE"], "append to the source file LINE, auto-prefixed with a tag, followed by the content of FILE", &apply_cli_option_push),
+    CLIOption::new("push", "p", &["LINE", "FILE"], "append to the source file LINE, auto-prefixed with a tag, followed by the content of FILE then exit", &apply_cli_option_push),
+    CLIOption::new("init", "i", &[], &*format!("create a template source file at the default source file path (currently '{}') then exit", SRC), &apply_cli_option_init),
     CLIOption::new_help()
   ]);
 
@@ -291,6 +292,37 @@ fn apply_cli_option_push(config: &Config, _0: &[CLIOption], strs: Vec<String>) -
   let mut file = fs::OpenOptions::new().append(true).open(src).unwrap();
   file.write_all(&script_plus_tag_line.into_bytes()).expect("append script to source file");
 
+  process::exit(0);
+}
+
+fn apply_cli_option_init(_0: &Config, _1: &[CLIOption], _2: Vec<String>) -> ConfigMapVal {
+
+  let content = format!("\
+    <any arguments to aliesce (run 'aliesce --help' for options)>\n\
+    \n\
+    Notes on source file format:\n\
+    \n\
+    Each script requires a preceding tag line. A tag line begins with the tag head ('{}') and has an optional label with the tag tail ('{}').\n\n\
+    By default the script is saved with the OUTPUT EXTENSION or to the FULL OUTPUT PATH then the COMMAND is run. \
+    Multiple sets of tag line and script can be included in a single source file.\n\n\
+    The '!' character can be included before the OUTPUT EXTENSION or FULL OUTPUT PATH to avoid the save and run stages, \
+    or before the COMMAND to save but avoid the run stage. \
+    The '{}' character can be used in the FULL OUTPUT PATH as a placeholder for the default or overridden output directory name.\n\
+    \n\
+    Tag line and script section:\n\
+    \n\
+    {} <any label {}> <OUTPUT EXTENSION or FULL OUTPUT PATH: [[dirname(s)/]basename.]extension> <COMMAND incl. any arguments>\n\
+    \n\
+    <script>\
+    ", TAG.head, TAG.tail, DIR.mark, TAG.head, TAG.tail
+  );
+
+  if fs::metadata(SRC).is_ok() {
+    println!("Not creating template source file at '{}' (path exists)", SRC);
+    process::exit(1)
+  }
+  fs::write(SRC, content).unwrap_or_else(|_| panic!("write simple source file content to '{}'", SRC));
+  println!("Created template source file at '{}'", SRC);
   process::exit(0);
 }
 

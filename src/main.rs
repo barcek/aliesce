@@ -134,6 +134,21 @@ impl OutputFile {
   }
 }
 
+/* utility functions */
+
+fn get_doc_lines(config: &Config) -> [String; 4] {
+
+  let Config { src, tag, dir, map: _ } = config;
+
+  let form = format!("The default source file path is currently '{}'. Each script in the source file requires a preceding tag line. A tag line begins with the tag head ('{}') and has an optional label with the tag tail ('{}'). The format is shown below.", src, tag.head, tag.tail);
+  let line = format!("{} <any label {}> <OUTPUT EXTENSION or FULL OUTPUT PATH: [[dirname(s)/]basename.]extension> <COMMAND incl. any arguments>", tag.head, tag.tail);
+
+  let data_items = String::from("By default the script is saved with the OUTPUT EXTENSION or to the FULL OUTPUT PATH then the COMMAND is run. Multiple tag line and script pairs can be listed.");
+  let data_chars = format!("The '!' character can be included before the OUTPUT EXTENSION or FULL OUTPUT PATH to avoid the save and run stages, or before the COMMAND to save but avoid the run stage. The '{}' character can be used in the FULL OUTPUT PATH to represent the default or overridden output directory name.", dir.mark);
+
+  [form, line, data_items, data_chars]
+}
+
 /* primary functions */
 
 fn main() {
@@ -142,8 +157,8 @@ fn main() {
 
   let args_on_cli = env::args().skip(1).collect::<Vec<String>>();
   let cli_options = Vec::from([
-    CLIOption::new("dest", "d", &["DIR"], &*format!("set the default output directory (currently '{}') to DIR", DIR.name), &apply_cli_option_dest),
-    CLIOption::new("list", "l", &[], "print for each script in the source file its number and tag line label and data, skipping the save and run stages", &apply_cli_option_list),
+    CLIOption::new("dest", "d", &["DIR"], &*format!("set the default output directory name (currently '{}') to DIR", DIR.name), &apply_cli_option_dest),
+    CLIOption::new("list", "l", &[], "print for each script in the source file its number and tag line content, skipping the save and run stages", &apply_cli_option_list),
     CLIOption::new("only", "o", &["SUBSET"], "include only scripts the numbers of which appear in SUBSET, comma-separated and/or in dash-indicated ranges, e.g. -o 1,3-5", &apply_cli_option_only),
     CLIOption::new("push", "p", &["LINE", "FILE"], "append to the source file LINE, auto-prefixed with a tag, followed by the content of FILE then exit", &apply_cli_option_push),
     CLIOption::new("init", "i", &[], &*format!("create a template source file at the default source file path (currently '{}') then exit", SRC), &apply_cli_option_init),
@@ -295,34 +310,26 @@ fn apply_cli_option_push(config: &Config, _0: &[CLIOption], strs: Vec<String>) -
   process::exit(0);
 }
 
-fn apply_cli_option_init(_0: &Config, _1: &[CLIOption], _2: Vec<String>) -> ConfigMapVal {
+fn apply_cli_option_init(config: &Config, _0: &[CLIOption], _1: Vec<String>) -> ConfigMapVal {
+
+  let [form, line, data_items, data_chars] = get_doc_lines(config);
+  let src = &config.src;
 
   let content = format!("\
-    <any arguments to aliesce (run 'aliesce --help' for options)>\n\
-    \n\
-    Notes on source file format:\n\
-    \n\
-    Each script requires a preceding tag line. A tag line begins with the tag head ('{}') and has an optional label with the tag tail ('{}').\n\n\
-    By default the script is saved with the OUTPUT EXTENSION or to the FULL OUTPUT PATH then the COMMAND is run. \
-    Multiple sets of tag line and script can be included in a single source file.\n\n\
-    The '!' character can be included before the OUTPUT EXTENSION or FULL OUTPUT PATH to avoid the save and run stages, \
-    or before the COMMAND to save but avoid the run stage. \
-    The '{}' character can be used in the FULL OUTPUT PATH as a placeholder for the default or overridden output directory name.\n\
-    \n\
-    Tag line and script section:\n\
-    \n\
-    {} <any label {}> <OUTPUT EXTENSION or FULL OUTPUT PATH: [[dirname(s)/]basename.]extension> <COMMAND incl. any arguments>\n\
-    \n\
-    <script>\
-    ", TAG.head, TAG.tail, DIR.mark, TAG.head, TAG.tail
+    <any arguments to aliesce (run 'aliesce --help' for options)>\n\n\
+    Notes on source file format:\n\n\
+    {}\n\n{}\n\n{}\n\n\
+    Tag line and script section:\n\n\
+    {}\n\n<script>\
+    ", form, data_items, data_chars, line
   );
 
-  if fs::metadata(SRC).is_ok() {
-    println!("Not creating template source file at '{}' (path exists)", SRC);
+  if fs::metadata(src).is_ok() {
+    println!("Not creating template source file at '{}' (path exists)", src);
     process::exit(1)
   }
-  fs::write(SRC, content).unwrap_or_else(|_| panic!("write simple source file content to '{}'", SRC));
-  println!("Created template source file at '{}'", SRC);
+  fs::write(src, content).unwrap_or_else(|_| panic!("write simple source file content to '{}'", src));
+  println!("Created template source file at '{}'", src);
   process::exit(0);
 }
 
@@ -341,7 +348,7 @@ fn apply_args_remaining_src(config: Config, _: Vec<String>) -> Config {
 mod args {
 
   use std::process;
-  use super::{ Config, ConfigMapVal };
+  use super::{ Config, ConfigMapVal, get_doc_lines };
 
   /* data structures */
 
@@ -367,7 +374,7 @@ mod args {
     }
 
     pub fn new_help() -> CLIOption {
-      CLIOption::new("help", "h", &[], "show usage and a list of available flags then exit", &apply_cli_option_help)
+      CLIOption::new("help", "h", &[], "show usage, flags available and notes then exit", &apply_cli_option_help)
     }
   }
 
@@ -375,7 +382,7 @@ mod args {
 
   /* argument applicator */
 
-  fn apply_cli_option_help(_0: &Config, cli_options: &[CLIOption], _1: Vec<String>) -> ConfigMapVal {
+  fn apply_cli_option_help(config: &Config, cli_options: &[CLIOption], _0: Vec<String>) -> ConfigMapVal {
 
     /* set value substrings and max length */
     let val_strs = cli_options.iter()
@@ -384,39 +391,44 @@ mod args {
     let val_strs_max = val_strs.iter()
       .fold(0, |acc, val_str| if val_str.len() > acc { val_str.len() } else { acc });
 
-    /* generate usage line */
+    /* generate usage text */
     let usage_opts_part = cli_options.iter()
       .filter(|cli_option| cli_option.word != "help") /* avoid duplication */
       .enumerate() /* yield also index (i) */
       .map(|(i, cli_option)| format!("[--{}/-{}{}]", cli_option.word, cli_option.char, if val_strs.is_empty() { "".to_owned() } else { " ".to_owned() + &val_strs[i] }))
       .collect::<Vec<String>>()
       .join(" ");
-    let usage_opts_full = line_break_and_indent(&format!("[--help/-h / {} [src]]", usage_opts_part), 15, 80);
+    let usage_opts_full = line_break_and_indent(&format!("[--help/-h / {} [source file path]]", usage_opts_part), 15, 80, false);
     let usage_text = format!("Usage: aliesce {}", usage_opts_full);
 
-    /* generate flags list */
+    /* generate flags text */
     let flags_list = cli_options.iter()
       .enumerate() /* yield also index (i) */
       .map(|(i, cli_option)| {
-        let desc = line_break_and_indent(&cli_option.desc, val_strs_max + 15, 80);
+        let desc = line_break_and_indent(&cli_option.desc, val_strs_max + 15, 80, false);
         format!(" -{}, --{}  {:w$}  {}", cli_option.char, cli_option.word, val_strs[i], desc, w = val_strs_max)
       })
       .collect::<Vec<String>>()
       .join("\n");
     let flags_text = format!("Flags:\n{}", flags_list);
 
-    println!("{}\n{}", usage_text, flags_text);
+    /* generate notes text */
+    let notes_body = get_doc_lines(config).map(|line| line_break_and_indent(&line, 1, 80, true)).join("\n\n");
+    let notes_text = format!("Notes:\n{}", notes_body);
+
+    println!("{}\n{}\n{}", usage_text, flags_text, notes_text);
     process::exit(0);
   }
 
   /* utility functions */
 
-  fn line_break_and_indent(line: &String, indent: usize, length: usize) -> String {
+  fn line_break_and_indent(line: &String, indent: usize, length: usize, indent_first: bool ) -> String {
 
-    let whitespace = format!("\n{}", String::from(" ").repeat(indent).as_str());
+    let whitespace_part = String::from(" ").repeat(indent);
+    let whitespace_full = format!("\n{}", whitespace_part);
     let text_width = length - indent;
 
-    line.split(' ').collect::<Vec<&str>>().iter()
+    let body = line.split(' ').collect::<Vec<&str>>().iter()
       .fold(Vec::new(), |mut acc: Vec<String>, word| {
         if acc.is_empty() { return Vec::from([word.to_string()]) };
         /* accrue text part of each line by word, not exceeding text width */
@@ -429,7 +441,9 @@ mod args {
         };
         acc
       })
-      .join(whitespace.as_str())
+      .join(whitespace_full.as_str());
+
+    if indent_first { format!("{}{}", whitespace_part, body) } else { body }
   }
 
   /* primary functions */

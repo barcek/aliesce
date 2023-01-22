@@ -375,7 +375,7 @@ mod args {
 
   /* argument applicator */
 
-  fn apply_cli_option_help(_0: &Config, cli_options: &[CLIOption], _2: Vec<String>) -> ConfigMapVal {
+  fn apply_cli_option_help(_0: &Config, cli_options: &[CLIOption], _1: Vec<String>) -> ConfigMapVal {
 
     /* set value substrings and max length */
     let val_strs = cli_options.iter()
@@ -385,23 +385,51 @@ mod args {
       .fold(0, |acc, val_str| if val_str.len() > acc { val_str.len() } else { acc });
 
     /* generate usage line */
-    let usage_part = cli_options.iter()
+    let usage_opts_part = cli_options.iter()
       .filter(|cli_option| cli_option.word != "help") /* avoid duplication */
       .enumerate() /* yield also index (i) */
       .map(|(i, cli_option)| format!("[--{}/-{}{}]", cli_option.word, cli_option.char, if val_strs.is_empty() { "".to_owned() } else { " ".to_owned() + &val_strs[i] }))
       .collect::<Vec<String>>()
       .join(" ");
-    let usage_line = format!("Usage: aliesce [--help/-h / {} [src]]", usage_part);
+    let usage_opts_full = line_break_and_indent(&format!("[--help/-h / {} [src]]", usage_opts_part), 15, 80);
+    let usage_text = format!("Usage: aliesce {}", usage_opts_full);
 
     /* generate flags list */
     let flags_list = cli_options.iter()
       .enumerate() /* yield also index (i) */
-      .map(|(i, cli_option)| format!(" -{}, --{}  {:w$}  {}", cli_option.char, cli_option.word, val_strs[i], cli_option.desc, w = val_strs_max))
+      .map(|(i, cli_option)| {
+        let desc = line_break_and_indent(&cli_option.desc, val_strs_max + 15, 80);
+        format!(" -{}, --{}  {:w$}  {}", cli_option.char, cli_option.word, val_strs[i], desc, w = val_strs_max)
+      })
       .collect::<Vec<String>>()
       .join("\n");
+    let flags_text = format!("Flags:\n{}", flags_list);
 
-    println!("{}\n{}\n{}", usage_line, String::from("Flags:"), flags_list);
+    println!("{}\n{}", usage_text, flags_text);
     process::exit(0);
+  }
+
+  /* utility functions */
+
+  fn line_break_and_indent(line: &String, indent: usize, length: usize) -> String {
+
+    let whitespace = format!("\n{}", String::from(" ").repeat(indent).as_str());
+    let text_width = length - indent;
+
+    line.split(' ').collect::<Vec<&str>>().iter()
+      .fold(Vec::new(), |mut acc: Vec<String>, word| {
+        if acc.is_empty() { return Vec::from([word.to_string()]) };
+        /* accrue text part of each line by word, not exceeding text width */
+        let index_last = acc.len() - 1;
+        match acc[index_last].chars().count() + word.chars().count() >= text_width {
+          /* begin new text part with word */
+          true => acc.push(String::from(*word)),
+          /* add word to current text part */
+          _    => acc[index_last].push_str(&format!(" {}", *word))
+        };
+        acc
+      })
+      .join(whitespace.as_str())
   }
 
   /* primary functions */

@@ -168,7 +168,10 @@ fn main() {
   let config_base = update_config(config_init, &cli_options, &apply_args_remaining_cli, args_on_cli);
 
   /* load script file content or exit early */
-  let content_whole = fs::read_to_string(&config_base.src).unwrap_or_else(|_| panic!("read source file '{}'", config_base.src));
+  let content_whole = fs::read_to_string(&config_base.src).unwrap_or_else(|err| {
+    println!("Not parsing source file '{}' (read error: '{}')", config_base.src, err);
+    process::exit(1);
+  });
   /* get args section plus each source string (script with tag line minus tag head) numbered */
   let content_parts = content_whole.split(config_base.tag.head).enumerate().collect::<Vec<(usize, &str)>>();
 
@@ -300,12 +303,27 @@ fn apply_cli_option_push(config: &Config, _0: &[CLIOption], strs: Vec<String>) -
   let script_filename = &strs[1];
   let Config { src, tag, dir: _, map: _ } = config;
 
-  let script = fs::read_to_string(script_filename).unwrap_or_else(|_| panic!("read script file '{}'", script_filename));
+  /* handle read */
+
+  let script = fs::read_to_string(script_filename).unwrap_or_else(|err| {
+    println!("Not parsing script file '{}' (read error: '{}')", script_filename, err);
+    process::exit(1);
+  });
   let script_plus_tag_line = format!("\n{} {}\n\n{}", tag.head, strs[0], script);
 
+  /* handle write */
+
   use std::io::Write;
-  let mut file = fs::OpenOptions::new().append(true).open(src).unwrap();
-  file.write_all(&script_plus_tag_line.into_bytes()).expect("append script to source file");
+  let msg_failure_write = format!("Not appending tag line and content of script file '{}' to source file '{}'", script_filename, src);
+
+  let mut file = fs::OpenOptions::new().append(true).open(src).unwrap_or_else(|err| {
+    println!("{} (write error: '{}')", msg_failure_write, err);
+    process::exit(1);
+  });
+  file.write_all(&script_plus_tag_line.into_bytes()).unwrap_or_else(|err| {
+    println!("{} (write error: '{}')", msg_failure_write, err);
+    process::exit(1);
+  });
 
   process::exit(0);
 }
@@ -324,11 +342,21 @@ fn apply_cli_option_init(config: &Config, _0: &[CLIOption], _1: Vec<String>) -> 
     ", form, data_items, data_chars, line
   );
 
+  /* handle failure */
+
+  let msg_failure = format!("Not creating template source file at '{}'", src);
+
   if fs::metadata(src).is_ok() {
-    println!("Not creating template source file at '{}' (path exists)", src);
+    println!("{} (path exists)", msg_failure);
     process::exit(1)
   }
-  fs::write(src, content).unwrap_or_else(|_| panic!("write simple source file content to '{}'", src));
+  fs::write(src, content).unwrap_or_else(|err| {
+    println!("{} (write error: '{}')", msg_failure, err);
+    process::exit(1);
+  });
+
+  /* handle success */
+
   println!("Created template source file at '{}'", src);
   process::exit(0);
 }

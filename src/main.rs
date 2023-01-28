@@ -1,4 +1,5 @@
 use std::env;
+use std::io;
 use std::fs;
 use std::process;
 use std::collections::HashMap;
@@ -149,6 +150,15 @@ fn get_doc_lines(config: &Config) -> [String; 4] {
   [form, line, data_items, data_chars]
 }
 
+fn error(strs: (&String, Option<&str>, Option<io::Error>)) -> ! {
+  match strs {
+    (sum, Some(act), Some(err)) => println!("{} ({} error: '{}')", sum, act, err),
+    (sum, None, None)           => println!("{}", sum),
+    _                           => println!("Failed (unknown error)")
+  }
+  process::exit(1);
+}
+
 /* primary functions */
 
 fn main() {
@@ -168,10 +178,8 @@ fn main() {
   let config_base = update_config(config_init, &cli_options, &apply_args_remaining_cli, args_on_cli);
 
   /* load script file content or exit early */
-  let content_whole = fs::read_to_string(&config_base.src).unwrap_or_else(|err| {
-    println!("Not parsing source file '{}' (read error: '{}')", config_base.src, err);
-    process::exit(1);
-  });
+  let content_whole = fs::read_to_string(&config_base.src)
+    .unwrap_or_else(|err| error((&format!("Not parsing source file '{}'", config_base.src), Some("read"), Some(err))));
   /* get args section plus each source string (script with tag line minus tag head) numbered */
   let content_parts = content_whole.split(config_base.tag.head).enumerate().collect::<Vec<(usize, &str)>>();
 
@@ -305,25 +313,19 @@ fn apply_cli_option_push(config: &Config, _0: &[CLIOption], strs: Vec<String>) -
 
   /* handle read */
 
-  let script = fs::read_to_string(script_filename).unwrap_or_else(|err| {
-    println!("Not parsing script file '{}' (read error: '{}')", script_filename, err);
-    process::exit(1);
-  });
+  let script = fs::read_to_string(script_filename)
+    .unwrap_or_else(|err| error((&format!("Not parsing script file '{}'", script_filename), Some("read"), Some(err))));
   let script_plus_tag_line = format!("\n{} {}\n\n{}", tag.head, strs[0], script);
 
   /* handle write */
 
-  use std::io::Write;
-  let msg_failure_write = format!("Not appending tag line and content of script file '{}' to source file '{}'", script_filename, src);
+  use io::Write;
+  let sum_failure = format!("Not appending tag line and content of script file '{}' to source file '{}'", script_filename, src);
 
-  let mut file = fs::OpenOptions::new().append(true).open(src).unwrap_or_else(|err| {
-    println!("{} (write error: '{}')", msg_failure_write, err);
-    process::exit(1);
-  });
-  file.write_all(&script_plus_tag_line.into_bytes()).unwrap_or_else(|err| {
-    println!("{} (write error: '{}')", msg_failure_write, err);
-    process::exit(1);
-  });
+  let mut file = fs::OpenOptions::new().append(true).open(src)
+    .unwrap_or_else(|err| error((&sum_failure, Some("open"), Some(err))));
+  file.write_all(&script_plus_tag_line.into_bytes())
+    .unwrap_or_else(|err| error((&sum_failure, Some("write"), Some(err))));
 
   process::exit(0);
 }
@@ -342,20 +344,14 @@ fn apply_cli_option_init(config: &Config, _0: &[CLIOption], _1: Vec<String>) -> 
     ", form, data_items, data_chars, line
   );
 
-  /* handle failure */
+  /* handle write */
 
-  let msg_failure = format!("Not creating template source file at '{}'", src);
+  let sum_failure = format!("Not creating template source file at '{}'", src);
 
-  if fs::metadata(src).is_ok() {
-    println!("{} (path exists)", msg_failure);
-    process::exit(1)
-  }
-  fs::write(src, content).unwrap_or_else(|err| {
-    println!("{} (write error: '{}')", msg_failure, err);
-    process::exit(1);
-  });
+  /* exit early if source file exists */
+  if fs::metadata(src).is_ok() { error((&format!("{} (path exists)", sum_failure), None, None)) };
 
-  /* handle success */
+  fs::write(src, content).unwrap_or_else(|err| error((&sum_failure, Some("write"), Some(err))));
 
   println!("Created template source file at '{}'", src);
   process::exit(0);

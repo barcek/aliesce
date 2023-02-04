@@ -140,17 +140,19 @@ impl OutputFile {
 
 /* utility functions */
 
-fn get_doc_lines(config: &Config) -> [String; 4] {
+fn get_doc_lines(config: &Config) -> [String; 5] {
 
   let Config { src, tag, dir, map: _ } = config;
 
-  let form = format!("The default source file path is currently '{}'. Each script in the source file requires a preceding tag line. A tag line begins with the tag head ('{}') and has an optional label with the tag tail ('{}'). The format is shown below.", src, tag.head, tag.tail);
+  let form = format!("The default source file path is '{}'. Each script in the source file requires a preceding tag line. A tag line begins with the tag head ('{}') and has an optional label with the tag tail ('{}'). The format is shown below.", src, tag.head, tag.tail);
   let line = format!("{} <any label {}> <OUTPUT EXTENSION or FULL OUTPUT PATH: [[dirname(s)/]basename.]extension> <COMMAND incl. any arguments>", tag.head, tag.tail);
 
-  let data_items = String::from("By default the script is saved with the OUTPUT EXTENSION or to the FULL OUTPUT PATH then the COMMAND is run. Multiple tag line and script pairs can be listed.");
+  let data_items = String::from("By default the script is saved with the OUTPUT EXTENSION or to the FULL OUTPUT PATH then the COMMAND is run with any arguments and the output path generated.");
   let data_chars = format!("The '!' character can be included before the OUTPUT EXTENSION or FULL OUTPUT PATH to avoid the save and run stages, or before the COMMAND to save but avoid the run stage. The '{}' character can be used in the FULL OUTPUT PATH to represent the default or overridden output directory name.", dir.mark);
 
-  [form, line, data_items, data_chars]
+  let read = format!("One or more paths can be piped to 'aliesce' to append the content at each to the source file as a script, auto-preceded by a tag line with '!', then exit.");
+
+  [form, line, data_items, data_chars, read]
 }
 
 fn error(strs: (&String, Option<&str>, Option<io::Error>)) -> ! {
@@ -175,7 +177,7 @@ fn main() {
     CLIOption::new("dest", "d", &["DIR"], &*format!("set the default output directory name (currently '{}') to DIR", DIR.name), &apply_cli_option_dest),
     CLIOption::new("list", "l", &[], "print for each script in the source file its number and tag line content, skipping the save and run stages", &apply_cli_option_list),
     CLIOption::new("only", "o", &["SUBSET"], "include only scripts the numbers of which appear in SUBSET, comma-separated and/or in dash-indicated ranges, e.g. -o 1,3-5", &apply_cli_option_only),
-    CLIOption::new("push", "p", &["LINE", "FILE"], "append to the source file LINE, auto-prefixed with a tag, followed by the content of FILE then exit", &apply_cli_option_push),
+    CLIOption::new("push", "p", &["LINE", "PATH"], "append to the source file LINE, auto-prefixed with a tag, followed by the content at PATH then exit", &apply_cli_option_push),
     CLIOption::new("init", "i", &[], &*format!("create a template source file at the default source file path (currently '{}') then exit", SRC), &apply_cli_option_init),
     CLIOption::new_help()
   ]);
@@ -369,16 +371,18 @@ fn apply_cli_option_push(config: &Config, _0: &[CLIOption], strs: Vec<String>) -
 
 fn apply_cli_option_init(config: &Config, _0: &[CLIOption], _1: Vec<String>) -> ConfigMapVal {
 
-  let [form, line, data_items, data_chars] = get_doc_lines(config);
+  let [form, line, data_items, data_chars, read] = get_doc_lines(config);
   let src = &config.src;
 
   let content = format!("\
     <any arguments to aliesce (run 'aliesce --help' for options)>\n\n\
     Notes on source file format:\n\n\
     {}\n\n{}\n\n{}\n\n\
+    Appending scripts via stdin:\n\n\
+    {}\n\n\
     Tag line and script section:\n\n\
     {}\n\n<script>\
-    ", form, data_items, data_chars, line
+    ", form, data_items, data_chars, read, line
   );
 
   /* handle write */

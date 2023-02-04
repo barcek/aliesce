@@ -1,5 +1,8 @@
-use std::env;
 use std::io;
+use std::thread;
+use std::sync::mpsc;
+use std::time::Duration;
+use std::env;
 use std::fs;
 use std::process;
 use std::collections::HashMap;
@@ -163,9 +166,11 @@ fn error(strs: (&String, Option<&str>, Option<io::Error>)) -> ! {
 
 fn main() {
 
-  let config_init = Config { src: String::from(SRC), tag: TAG, dir: DIR, map: HashMap::new() };
-
+  /* get any paths read from stdin */
+  let paths_stdin = read_stdin();
+  /* get any arguments passed on CLI */
   let args_on_cli = env::args().skip(1).collect::<Vec<String>>();
+
   let cli_options = Vec::from([
     CLIOption::new("dest", "d", &["DIR"], &*format!("set the default output directory name (currently '{}') to DIR", DIR.name), &apply_cli_option_dest),
     CLIOption::new("list", "l", &[], "print for each script in the source file its number and tag line content, skipping the save and run stages", &apply_cli_option_list),
@@ -175,7 +180,17 @@ fn main() {
     CLIOption::new_help()
   ]);
 
+  /* set config per defaults and args on CLI */
+  let config_init = Config { src: String::from(SRC), tag: TAG, dir: DIR, map: HashMap::new() };
   let config_base = update_config(config_init, &cli_options, &apply_args_remaining_cli, args_on_cli);
+
+  /* handle pushes for paths read from stdin */
+  if paths_stdin.len() > 0 {
+    for path in paths_stdin {
+      push(&config_base, Vec::from(["!".to_string(), path]));
+    }
+    process::exit(0);
+  };
 
   /* load script file content or exit early */
   let content_whole = fs::read_to_string(&config_base.src)
@@ -197,6 +212,47 @@ fn main() {
     .map(parse_inputs_to_output)
     /* print or save and run each variant */
     .for_each(apply_output)
+}
+
+fn read_stdin() -> Vec<String> {
+
+  use io::Read;
+  let (tx, rx) = mpsc::channel();
+
+  thread::spawn(move || {
+    let mut stdin = io::stdin();
+    let mut bfr = String::new();
+    stdin.read_to_string(&mut bfr).unwrap();
+    tx.send(bfr).unwrap();
+  });
+  thread::sleep(Duration::from_millis(25));
+
+  match rx.try_recv() {
+    Ok(recvd) => recvd.split_whitespace().map(|str| str.to_string()).filter(|str| str != "").collect::<Vec<String>>(),
+    Err(_)    => Vec::new()
+  }
+}
+
+fn push(config: &Config, strs: Vec<String>) {
+
+  let script_filename = &strs[1];
+  let Config { src, tag, dir: _, map: _ } = config;
+
+  /* handle read */
+
+  let script = fs::read_to_string(script_filename)
+    .unwrap_or_else(|err| error((&format!("Not parsing script file '{}'", script_filename), Some("read"), Some(err))));
+  let script_plus_tag_line = format!("\n{} {}\n\n{}", tag.head, strs[0], script);
+
+  /* handle write */
+
+  use io::Write;
+  let sum_failure = format!("Not appending tag line and content of script file '{}' to source file '{}'", script_filename, src);
+
+  let mut file = fs::OpenOptions::new().append(true).open(src)
+    .unwrap_or_else(|err| error((&sum_failure, Some("open"), Some(err))));
+  file.write_all(&script_plus_tag_line.into_bytes())
+    .unwrap_or_else(|err| error((&sum_failure, Some("write"), Some(err))));
 }
 
 fn match_inputs_per_cli_option_only(inputs: &Inputs) -> bool {
@@ -307,26 +363,7 @@ fn apply_cli_option_only(_0: &Config, _1: &[CLIOption], strs: Vec<String>) -> Co
 }
 
 fn apply_cli_option_push(config: &Config, _0: &[CLIOption], strs: Vec<String>) -> ConfigMapVal {
-
-  let script_filename = &strs[1];
-  let Config { src, tag, dir: _, map: _ } = config;
-
-  /* handle read */
-
-  let script = fs::read_to_string(script_filename)
-    .unwrap_or_else(|err| error((&format!("Not parsing script file '{}'", script_filename), Some("read"), Some(err))));
-  let script_plus_tag_line = format!("\n{} {}\n\n{}", tag.head, strs[0], script);
-
-  /* handle write */
-
-  use io::Write;
-  let sum_failure = format!("Not appending tag line and content of script file '{}' to source file '{}'", script_filename, src);
-
-  let mut file = fs::OpenOptions::new().append(true).open(src)
-    .unwrap_or_else(|err| error((&sum_failure, Some("open"), Some(err))));
-  file.write_all(&script_plus_tag_line.into_bytes())
-    .unwrap_or_else(|err| error((&sum_failure, Some("write"), Some(err))));
-
+  push(config, strs);
   process::exit(0);
 }
 

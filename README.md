@@ -12,6 +12,7 @@ Write, save and run scripts in multiple languages from a single source file.
     - [Labelling scripts](#labelling-scripts)
 - [Options](#options)
   - [Provision in-file](#provision-in-file)
+- [Piping](#piping)
 - [Getting started](#getting-started)
 - [Making changes](#making-changes)
   - [Tests](#tests)
@@ -118,7 +119,7 @@ The following can be passed to `aliesce` before any source file name:
 - `--dest` / `-d`  `DIR`, to set the default output directory name (currently 'scripts') to `DIR`
 - `--list` / `-l`, to print for each script in the source file its number and tag line content, skipping the save and run stages
 - `--only` / `-o`  `SUBSET`, to include only scripts the numbers of which appear in `SUBSET`, comma-separated and/or in dash-indicated ranges, e.g. `-o 1,3-5`
-- `--push` / `-p`  `LINE` `FILE`, to append to the source file `LINE`, auto-prefixed with a tag, followed by the content of `FILE` then exit
+- `--push` / `-p`  `LINE` `PATH`, to append to the source file `LINE`, auto-prefixed with a tag, followed by the content at `PATH` then exit
 - `--init` / `-i`, to create a template source file at the default source file path (currently 'src.txt') then exit
 - `--help` / `-h`, to show usage, flags available and notes then exit
 
@@ -129,6 +130,10 @@ Any or all of the options above can also be selected by providing their argument
 Arguments provided in-file are simply placed above the initial tag line, arranged in the usual order, whether on a single line or multiple. They are processed each time the file is handled by aliesce.
 
 Arguments passed directly on the command line are processed first, followed by those in the file, with the latter overriding the former in the event that an option is selected using both approaches.
+
+## Piping
+
+One or more paths can be piped to `aliesce` to append the content at each to the source file as a script, auto-preceded by a tag line including the `!` character, then exit.
 
 ## Getting started
 

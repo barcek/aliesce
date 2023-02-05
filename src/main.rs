@@ -197,8 +197,10 @@ fn main() {
   /* load script file content or exit early */
   let content_whole = fs::read_to_string(&config_base.src)
     .unwrap_or_else(|err| error((&format!("Not parsing source file '{}'", config_base.src), Some("read"), Some(err))));
-  /* get args section plus each source string (script with tag line minus tag head) numbered */
-  let content_parts = content_whole.split(config_base.tag.head).enumerate().collect::<Vec<(usize, &str)>>();
+  /* get args section plus each source string (script with tag line minus tag head) numbered, excl. init option content */
+  let [form, line, _, _, _] = &get_doc_lines(&config_base);
+  let content_added = content_whole.replace(form, "").replace(line, "");
+  let content_parts = content_added.split(config_base.tag.head).enumerate().collect::<Vec<(usize, &str)>>();
 
   /* update config to encompass args section */
   let args_in_src = content_parts[0].1.split_whitespace().map(|part| part.trim().to_string()).filter(|part| part != "").collect::<Vec<String>>();

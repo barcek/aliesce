@@ -140,15 +140,13 @@ impl OutputFile {
 
 /* utility functions */
 
-fn get_doc_lines(config: &Config) -> [String; 5] {
+fn get_doc_lines() -> [String; 5] {
 
-  let Config { src, tag, dir, map: _ } = config;
-
-  let form = format!("The default source file path is '{}'. Each script in the source file requires a preceding tag line. A tag line begins with the tag head ('{}') and has an optional label with the tag tail ('{}'). The format is shown below.", src, tag.head, tag.tail);
-  let line = format!("{} <any label {}> <OUTPUT EXTENSION or FULL OUTPUT PATH: [[dirname(s)/]basename.]extension> <COMMAND incl. any arguments>", tag.head, tag.tail);
+  let form = format!("The default source file path is '{}'. Each script in the source file requires a preceding tag line. A tag line begins with the tag head ('{}') and has an optional label with the tag tail ('{}'). The format is shown below.", SRC, TAG.head, TAG.tail);
+  let line = format!("{} <any label {}> <OUTPUT EXTENSION or FULL OUTPUT PATH: [[dirname(s)/]basename.]extension> <COMMAND incl. any arguments>", TAG.head, TAG.tail);
 
   let data_items = String::from("By default the script is saved with the OUTPUT EXTENSION or to the FULL OUTPUT PATH then the COMMAND is run with any arguments and the output path generated.");
-  let data_chars = format!("The '!' character can be included before the OUTPUT EXTENSION or FULL OUTPUT PATH to avoid the save and run stages, or before the COMMAND to save but avoid the run stage. The '{}' character can be used in the FULL OUTPUT PATH to represent the default or overridden output directory name.", dir.mark);
+  let data_chars = format!("The '!' character can be included before the OUTPUT EXTENSION or FULL OUTPUT PATH to avoid the save and run stages, or before the COMMAND to save but avoid the run stage. The '{}' character can be used in the FULL OUTPUT PATH to represent the default or overridden output directory name.", DIR.mark);
 
   let read = format!("One or more paths can be piped to 'aliesce' to append the content at each to the source file as a script, auto-preceded by a tag line with '!', then exit.");
 
@@ -198,7 +196,7 @@ fn main() {
   let content_whole = fs::read_to_string(&config_base.src)
     .unwrap_or_else(|err| error((&format!("Not parsing source file '{}'", config_base.src), Some("read"), Some(err))));
   /* get args section plus each source string (script with tag line minus tag head) numbered, excl. init option content */
-  let [form, line, _, _, _] = &get_doc_lines(&config_base);
+  let [form, line, _, _, _] = &get_doc_lines();
   let content_added = content_whole.replace(form, "").replace(line, "");
   let content_parts = content_added.split(config_base.tag.head).enumerate().collect::<Vec<(usize, &str)>>();
 
@@ -373,7 +371,7 @@ fn apply_cli_option_push(config: &Config, _0: &[CLIOption], strs: Vec<String>) -
 
 fn apply_cli_option_init(config: &Config, _0: &[CLIOption], _1: Vec<String>) -> ConfigMapVal {
 
-  let [form, line, data_items, data_chars, read] = get_doc_lines(config);
+  let [form, line, data_items, data_chars, read] = get_doc_lines();
   let src = &config.src;
 
   let content = format!("\
@@ -449,7 +447,7 @@ mod args {
 
   /* argument applicator */
 
-  fn apply_cli_option_help(config: &Config, cli_options: &[CLIOption], _0: Vec<String>) -> ConfigMapVal {
+  fn apply_cli_option_help(_: &Config, cli_options: &[CLIOption], _0: Vec<String>) -> ConfigMapVal {
 
     /* set value substrings and max length */
     let val_strs = cli_options.iter()
@@ -480,7 +478,7 @@ mod args {
     let flags_text = format!("Flags:\n{}", flags_list);
 
     /* generate notes text */
-    let notes_body = get_doc_lines(config).map(|line| line_break_and_indent(&line, 1, 80, true)).join("\n\n");
+    let notes_body = get_doc_lines().map(|line| line_break_and_indent(&line, 1, 80, true)).join("\n\n");
     let notes_text = format!("Notes:\n{}", notes_body);
 
     println!("{}\n{}\n{}", usage_text, flags_text, notes_text);
@@ -535,6 +533,10 @@ mod args {
       };
     };
 
+    /* handle any remaining arguments */
+    let args_remaining = args[(cli_options_count)..].to_vec();
+    config = handle_remaining(config, args_remaining);
+
     /* make any queued CLI option calls */
     if !cli_options_queued.is_empty() {
       for opt_queued in &cli_options_queued {
@@ -543,10 +545,6 @@ mod args {
         config.map.insert(word.to_string(), value);
       }
     }
-
-    /* handle any remaining arguments */
-    let args_remaining = args[(cli_options_count)..].to_vec();
-    config = handle_remaining(config, args_remaining);
 
     config
   }

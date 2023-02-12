@@ -244,17 +244,21 @@ fn push(config: &Config, strs: Vec<String>) {
 
   let script = fs::read_to_string(script_filename)
     .unwrap_or_else(|err| error((&format!("Not parsing script file '{}'", script_filename), Some("read"), Some(err))));
-  let script_plus_tag_line = format!("\n{} {}\n\n{}", tag.head, strs[0], script);
+  let tag_line = format!("{} {}", tag.head, strs[0]);
+  let script_plus_tag_line = format!("\n{}\n\n{}", tag_line, script);
 
   /* handle write */
 
   use io::Write;
-  let sum_failure = format!("Not appending tag line and content of script file '{}' to source file '{}'", script_filename, src);
+  let sum_base = format!("tag line '{}' and content of script file '{}' to source file '{}'", tag_line, script_filename, src);
+  let sum_failure = format!("Not appending {}", sum_base);
+  let sum_success = format!("Appended {}", sum_base);
 
   let mut file = fs::OpenOptions::new().append(true).open(src)
     .unwrap_or_else(|err| error((&sum_failure, Some("open"), Some(err))));
   file.write_all(&script_plus_tag_line.into_bytes())
     .unwrap_or_else(|err| error((&sum_failure, Some("write"), Some(err))));
+  println!("{}", sum_success);
 }
 
 fn match_inputs_per_cli_option_only(inputs: &Inputs) -> bool {

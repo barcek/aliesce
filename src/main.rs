@@ -385,7 +385,7 @@ fn apply_cli_option_init(config: &Config, _0: &[CLIOption], _1: Vec<String>) -> 
     Appending scripts via stdin:\n\n\
     {}\n\n\
     Tag line and script section:\n\n\
-    {}\n\n<script>\
+    {}\n\n<script>\n\
     ", form, data_items, data_chars, read, line
   );
 

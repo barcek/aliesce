@@ -155,9 +155,9 @@ fn get_doc_lines() -> [String; 5] {
 
 fn error(strs: (&String, Option<&str>, Option<io::Error>)) -> ! {
   match strs {
-    (sum, Some(act), Some(err)) => println!("{} ({} error: '{}')", sum, act, err),
-    (sum, None, None)           => println!("{}", sum),
-    _                           => println!("Failed (unknown error)")
+    (sum, Some(act), Some(err)) => eprintln!("{} ({} error: '{}')", sum, act, err),
+    (sum, None, None)           => eprintln!("{}", sum),
+    _                           => eprintln!("Failed (unknown error)")
   }
   process::exit(1);
 }

@@ -148,7 +148,7 @@ fn get_doc_lines() -> [String; 5] {
   let data_items = String::from("By default the script is saved with the OUTPUT EXTENSION or to the FULL OUTPUT PATH then the COMMAND is run with any arguments and the output path generated.");
   let data_chars = format!("The '!' character can be included before the OUTPUT EXTENSION or FULL OUTPUT PATH to avoid the save and run stages, or before the COMMAND to save but avoid the run stage. The '{}' character can be used in the FULL OUTPUT PATH to represent the default or overridden output directory name.", DIR.mark);
 
-  let read = format!("One or more paths can be piped to 'aliesce' to append the content at each to the source file as a script, auto-preceded by a tag line with '!', then exit.");
+  let read = String::from("One or more paths can be piped to 'aliesce' to append the content at each to the source file as a script, auto-preceded by a tag line with '!', then exit.");
 
   [form, line, data_items, data_chars, read]
 }
@@ -185,7 +185,7 @@ fn main() {
   let config_base = update_config(config_init, &cli_options, &apply_args_remaining_cli, args_on_cli);
 
   /* handle pushes for paths read from stdin */
-  if paths_stdin.len() > 0 {
+  if !paths_stdin.is_empty() {
     for path in paths_stdin {
       push(&config_base, Vec::from(["!".to_string(), path]));
     }
@@ -203,12 +203,12 @@ fn main() {
 
   /* remove any shebang line in args section */
   if "#!" == &content_parts[0].1[..2] {
-    let remainder = content_parts[0].1.splitn(2, "\n").last().unwrap();
+    let remainder = content_parts[0].1.splitn(2, '\n').last().unwrap();
     content_parts[0] = (content_parts[0].0, remainder);
   }
 
   /* update config to encompass args section */
-  let args_in_src = content_parts[0].1.split_whitespace().map(|part| part.trim().to_string()).filter(|part| part != "").collect::<Vec<String>>();
+  let args_in_src = content_parts[0].1.split_whitespace().map(|part| part.trim().to_string()).filter(|part| !part.is_empty()).collect::<Vec<String>>();
   let config_full = update_config(config_base, &cli_options, &apply_args_remaining_src, args_in_src);
 
   /* process each part to inputs then output */
@@ -237,7 +237,7 @@ fn read_stdin() -> Vec<String> {
   thread::sleep(Duration::from_millis(25));
 
   match rx.try_recv() {
-    Ok(recvd) => recvd.split_whitespace().map(|str| str.to_string()).filter(|str| str != "").collect::<Vec<String>>(),
+    Ok(recvd) => recvd.split_whitespace().map(|str| str.to_string()).filter(|str| !str.is_empty()).collect::<Vec<String>>(),
     Err(_)    => Vec::new()
   }
 }
@@ -303,7 +303,7 @@ fn parse_inputs_to_output(inputs: Inputs) -> Option<Output> {
   /* get items from tag line data */
   let data = tag_line_data.split(' ')
     .map(|item| item.to_string())
-    .filter(|item| item != "") /* remove whitespace */
+    .filter(|item| !item.is_empty()) /* remove whitespace */
     .collect::<Vec<String>>();
 
   /* handle data absent or bypass */
@@ -316,14 +316,14 @@ fn parse_inputs_to_output(inputs: Inputs) -> Option<Output> {
     return Some(Output::Text(text));
   }
 
-  Some(Output::File(OutputFile::new(data, code, i, &config)))
+  Some(Output::File(OutputFile::new(data, code, i, config)))
 }
 
 fn apply_output(output: Option<Output>) {
   match output {
     Some(Output::Text(s)) => { println!("{}", &s); },
     Some(Output::File(s)) => { save_output(&s); exec_output(&s); },
-    None                  => { return }
+    None                  => {}
   };
 }
 
@@ -358,7 +358,7 @@ fn exec_output(output: &OutputFile) {
 /* argument applicators */
 
 fn apply_cli_option_dest(_0: &Config, _1: &[CLIOption], strs: Vec<String>) -> ConfigMapVal {
-  ConfigMapVal::Strs(Vec::from(strs))
+  ConfigMapVal::Strs(strs)
 }
 
 fn apply_cli_option_list(_0: &Config, _1: &[CLIOption], _2: Vec<String>) -> ConfigMapVal {
@@ -498,7 +498,7 @@ mod args {
 
   /* utility functions */
 
-  fn line_break_and_indent(line: &String, indent: usize, length: usize, indent_first: bool ) -> String {
+  fn line_break_and_indent(line: &str, indent: usize, length: usize, indent_first: bool ) -> String {
 
     let whitespace_part = String::from(" ").repeat(indent);
     let whitespace_full = format!("\n{}", whitespace_part);
@@ -524,9 +524,9 @@ mod args {
 
   /* primary functions */
 
-  pub fn update_config(mut config: Config<'static>, cli_options: &Vec<CLIOption>, handle_remaining: &CLIArgHandler, args: Vec<String>) -> Config<'static> {
+  pub fn update_config(mut config: Config<'static>, cli_options: &[CLIOption], handle_remaining: &CLIArgHandler, args: Vec<String>) -> Config<'static> {
 
-    let args_count: usize = args.len().try_into().unwrap();
+    let args_count: usize = args.len();
 
     /* for each flag in args, queue CLI option call with any values and tally */
     let mut cli_options_queued = Vec::new();
@@ -552,7 +552,7 @@ mod args {
     if !cli_options_queued.is_empty() {
       for opt_queued in &cli_options_queued {
         let (word, call, strs) = &opt_queued;
-        let value = call(&config, &cli_options, strs.to_vec());
+        let value = call(&config, cli_options, strs.to_vec());
         config.map.insert(word.to_string(), value);
       }
     }

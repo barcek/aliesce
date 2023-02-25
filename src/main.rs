@@ -195,10 +195,17 @@ fn main() {
   /* load script file content or exit early */
   let content_whole = fs::read_to_string(&config_base.src)
     .unwrap_or_else(|err| error((&format!("Not parsing source file '{}'", config_base.src), Some("read"), Some(err))));
+
   /* get args section plus each source string (script with tag line minus tag head) numbered, excl. init option content */
   let [form, line, _, _, _] = &get_doc_lines();
   let content_added = content_whole.replace(form, "").replace(line, "");
-  let content_parts = content_added.split(config_base.tag.head).enumerate().collect::<Vec<(usize, &str)>>();
+  let mut content_parts = content_added.split(config_base.tag.head).enumerate().collect::<Vec<(usize, &str)>>();
+
+  /* remove any shebang line in args section */
+  if "#!" == &content_parts[0].1[..2] {
+    let remainder = content_parts[0].1.splitn(2, "\n").last().unwrap();
+    content_parts[0] = (content_parts[0].0, remainder);
+  }
 
   /* update config to encompass args section */
   let args_in_src = content_parts[0].1.split_whitespace().map(|part| part.trim().to_string()).filter(|part| part != "").collect::<Vec<String>>();

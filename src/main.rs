@@ -1,3 +1,30 @@
+/*
+  SOURCE PROCESSING
+  - imports
+  - DEFAULT VALUES, incl. data structures
+  - data structures, remaining
+    - configuration
+    - consolidation
+  - utility functions, incl. DOC LINES
+  - primary functions, incl. MAIN (w/ CLI OPTIONS)
+  - argument applicators
+
+  ARGUMENT HANDLING / mod args
+  - imports
+  - data structures
+  - argument applicator ('help')
+  - utility functions
+  - primary functions
+
+  UNIT TESTING / mod test
+  - imports
+  - test cases
+*/
+
+/* SOURCE PROCESSING */
+
+/* - imports */
+
 use std::io;
 use std::thread;
 use std::sync::mpsc;
@@ -9,7 +36,7 @@ use std::collections::HashMap;
 
 use crate::args::{ CLIOption, update_config };
 
-/* DEFAULT VALUES */
+/* - DEFAULT VALUES, incl. data structures */
 
 #[derive(Clone, Copy)]
 struct ScriptTag<'a> {
@@ -27,11 +54,9 @@ static SRC: &str = "src.txt"; /* source filename (incl. output basename) */
 static TAG: ScriptTag = ScriptTag { head: "###", tail: "#" }; /* tag line opener and optional label closer */
 static DIR: OutputDir = OutputDir { name: "scripts", mark: ">" }; /* output directory name and placeholder */
 
-/* TRANSFORMATION */
+/* - data structures, remaining */
 
-/* data structures */
-
-/* - configuration */
+/*   - configuration */
 
 #[derive(PartialEq, Eq)]
 pub enum ConfigMapVal {
@@ -49,7 +74,7 @@ pub struct Config<'a> {
   map: ConfigMap
 }
 
-/* - consolidation */
+/*   - consolidation */
 
 struct Inputs<'a> {
   i: usize,
@@ -138,7 +163,7 @@ impl OutputFile {
   }
 }
 
-/* utility functions */
+/* - utility functions, incl. DOC LINES */
 
 fn get_doc_lines() -> [String; 5] {
 
@@ -162,7 +187,7 @@ fn error(strs: (&String, Option<&str>, Option<io::Error>)) -> ! {
   process::exit(1);
 }
 
-/* primary functions */
+/* - primary functions, incl. MAIN (w/ CLI OPTIONS) */
 
 fn main() {
 
@@ -355,7 +380,7 @@ fn exec_output(output: &OutputFile) {
     .wait_with_output().unwrap_or_else(|_| panic!("await output from '{}'", prog));
 }
 
-/* argument applicators */
+/* - argument applicators */
 
 fn apply_cli_option_dest(_0: &Config, _1: &[CLIOption], strs: Vec<String>) -> ConfigMapVal {
   ConfigMapVal::Strs(strs)
@@ -423,10 +448,12 @@ fn apply_args_remaining_src(config: Config, _: Vec<String>) -> Config {
 
 mod args {
 
+  /* - imports */
+
   use std::process;
   use super::{ Config, ConfigMapVal, get_doc_lines };
 
-  /* data structures */
+  /* - data structures */
 
   type CLIOptionCall = dyn Fn(&Config, &[CLIOption], Vec<String>) -> ConfigMapVal;
 
@@ -456,7 +483,7 @@ mod args {
 
   type CLIArgHandler = dyn Fn(Config, Vec<String>) -> Config;
 
-  /* argument applicator */
+  /* - argument applicator ('help') */
 
   fn apply_cli_option_help(_: &Config, cli_options: &[CLIOption], _0: Vec<String>) -> ConfigMapVal {
 
@@ -496,7 +523,7 @@ mod args {
     process::exit(0);
   }
 
-  /* utility functions */
+  /* - utility functions */
 
   fn line_break_and_indent(line: &str, indent: usize, length: usize, indent_first: bool ) -> String {
 
@@ -522,7 +549,7 @@ mod args {
     if indent_first { format!("{}{}", whitespace_part, body) } else { body }
   }
 
-  /* primary functions */
+  /* - primary functions */
 
   pub fn update_config(mut config: Config<'static>, cli_options: &[CLIOption], handle_remaining: &CLIArgHandler, args: Vec<String>) -> Config<'static> {
 
@@ -561,13 +588,19 @@ mod args {
   }
 }
 
-/* UNIT TESTS */
+/* UNIT TESTING */
 
 #[cfg(test)]
 mod test {
 
+  /* - imports */
+
   use::std::collections::HashMap;
   use super::{ ScriptTag, OutputDir, Config, ConfigMapVal, Inputs, Output, OutputFilePath, OutputFileInit, OutputFile, parse_inputs_to_output };
+
+  /* - test cases */
+
+  /*   - function: parse_inputs_to_output */
 
   fn get_values_for_parse_inputs() -> (Config<'static>, usize, String, OutputFilePath, OutputFileInit) {
 

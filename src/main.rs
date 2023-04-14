@@ -38,6 +38,17 @@ use crate::args::{ CLIOption, update_config };
 
 /* - DEFAULT VALUES, incl. data structures */
 
+static SRC: &str = "src.txt";       /* source filename (incl. output basename) */
+static DIR: &str = "scripts";       /* output directory name */
+static TAG: ScriptTag = ScriptTag { /* tag line opener, label closer and misc. later items */
+  head: "###",
+  tail: "#",
+  post: ScriptTagPost {
+    path_dir: ">",
+    stop:     "!"
+  }
+};
+
 #[derive(Clone, Copy)]
 struct ScriptTag<'a> {
   head: &'a str,
@@ -47,25 +58,9 @@ struct ScriptTag<'a> {
 
 #[derive(Clone, Copy)]
 struct ScriptTagPost<'a> {
-  stop: &'a str
+  path_dir: &'a str,
+  stop:     &'a str
 }
-
-#[derive(Clone, Copy)]
-struct OutputDir<'a> {
-  name: &'a str,
-  mark: &'a str
-}
-
-static SRC: &str = "src.txt";       /* source filename (incl. output basename) */
-static TAG: ScriptTag = ScriptTag { /* tag line opener, label closer and misc. later items */
-  head: "###",
-  tail: "#",
-  post: ScriptTagPost { stop: "!" }
-};
-static DIR: OutputDir = OutputDir { /* output directory name and placeholder */
-  name: "scripts",
-  mark: ">"
-};
 
 /* - data structures, remaining */
 
@@ -83,7 +78,7 @@ pub type ConfigMap = HashMap<String, ConfigMapVal>;
 pub struct Config<'a> {
   src: String,
   tag: ScriptTag<'a>,
-  dir: OutputDir<'a>,
+  dir: &'a str,
   map: ConfigMap
 }
 
@@ -121,15 +116,15 @@ impl OutputFile {
     let mut parts_path = data.get(0).unwrap().split('/').collect::<Vec<&str>>();
 
     /* handle option - dest - update output directory name */
-    let dirname = if !map.contains_key("dest") { dir.name } else {
+    let dirname = if !map.contains_key("dest") { dir } else {
       match config.map.get("dest").unwrap() {
         ConfigMapVal::Strs(val_strs) => val_strs[0].as_str(),
-        _                            => dir.name
+        _                            => dir
       }
     };
 
     /* handle output directory identified by directory placeholder */
-    if dir.mark == parts_path[0] { parts_path[0] = dirname };
+    if tag.post.path_dir == parts_path[0] { parts_path[0] = dirname };
     /* get output filename parts - separate last output path part and break on '.' */
     let parts_filename = parts_path.split_off(parts_path.len() - 1).last().unwrap().split('.').collect::<Vec<&str>>();
     let p_f_len = parts_filename.len();
@@ -198,7 +193,7 @@ fn get_doc_lines() -> [String; 5] {
   let line = format!("{} <any label {}> <OUTPUT EXTENSION or FULL OUTPUT PATH: [[dirname(s)/]basename.]extension> <COMMAND incl. any arguments>", TAG.head, TAG.tail);
 
   let data_items = String::from("By default the script is saved with the OUTPUT EXTENSION or to the FULL OUTPUT PATH then the COMMAND is run with any arguments and the output path generated.");
-  let data_chars = format!("The '{}' placeholder can be included before the OUTPUT EXTENSION or FULL OUTPUT PATH to avoid the save and run stages, or before the COMMAND to save but avoid the run stage. The '{}' character can be used in the FULL OUTPUT PATH to represent the default or overridden output directory name.", TAG.post.stop, DIR.mark);
+  let data_chars = format!("The '{}' placeholder can be included before the OUTPUT EXTENSION or FULL OUTPUT PATH to avoid the save and run stages, or before the COMMAND to save but avoid the run stage. The '{}' character can be used in the FULL OUTPUT PATH to represent the default or overridden output directory name.", TAG.post.stop, TAG.post.path_dir);
 
   let read = format!("One or more paths can be piped to 'aliesce' to append the content at each to the source file as a script, auto-preceded by a tag line with '{}', then exit.", TAG.post.stop);
 
@@ -224,7 +219,7 @@ fn main() {
   let args_on_cli = env::args().skip(1).collect::<Vec<String>>();
 
   let cli_options = Vec::from([
-    CLIOption::new("dest", "d", &["DIR"], &*format!("set the default output directory name (currently '{}') to DIR", DIR.name), &apply_cli_option_dest),
+    CLIOption::new("dest", "d", &["DIR"], &*format!("set the default output directory name (currently '{}') to DIR", DIR), &apply_cli_option_dest),
     CLIOption::new("list", "l", &[], "print for each script in the source file its number and tag line content, skipping the save and run stages", &apply_cli_option_list),
     CLIOption::new("only", "o", &["SUBSET"], "include only scripts the numbers of which appear in SUBSET, comma-separated and/or in dash-indicated ranges, e.g. -o 1,3-5", &apply_cli_option_only),
     CLIOption::new("push", "p", &["LINE", "PATH"], "append to the source file LINE, auto-prefixed with a tag, followed by the content at PATH then exit", &apply_cli_option_push),
@@ -630,7 +625,6 @@ mod test {
   use::std::collections::HashMap;
   use super::{
     ScriptTag, ScriptTagPost,
-    OutputDir,
     Config, ConfigMapVal,
     Inputs,
     Output, OutputFile, OutputFilePath, OutputFileInit, OutputFileInitCode,
@@ -646,10 +640,8 @@ mod test {
     let src_default_str = "src.txt";
     let src_basename_default_str = src_default_str.split(".").nth(0).unwrap();
 
-    let tag_default = ScriptTag { head: "###", tail: "#", post: ScriptTagPost { stop: "!" } };
-
-    let dir_default_str = "scripts";
-    let dir_default = OutputDir { name: dir_default_str, mark: ">" };
+    let tag_default = ScriptTag { head: "###", tail: "#", post: ScriptTagPost { path_dir: ">", stop: "!" } };
+    let dir_default = "scripts";
 
     let map_default = HashMap::new();
 
@@ -668,7 +660,7 @@ mod test {
     let code  = String::from("//code");
 
     let output_path = OutputFilePath {
-      dir: String::from(dir_default_str),
+      dir: String::from(dir_default),
       basename: String::from(src_basename_default_str),
       ext
     };
@@ -746,7 +738,7 @@ mod test {
 
     let data = Vec::from(["script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
-    let dir = String::from(config_default.dir.name);
+    let dir = String::from(config_default.dir);
     let basename = String::from("script");
     let ext = String::from("ext");
     let path = OutputFilePath { dir, basename, ext };
@@ -765,7 +757,7 @@ mod test {
 
     let data = Vec::from(["script.suffix1.suffix2.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
-    let dir = String::from(config_default.dir.name);
+    let dir = String::from(config_default.dir);
     let basename = String::from("script.suffix1.suffix2");
     let ext = String::from("ext");
     let path = OutputFilePath { dir, basename, ext };

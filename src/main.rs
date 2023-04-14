@@ -41,7 +41,13 @@ use crate::args::{ CLIOption, update_config };
 #[derive(Clone, Copy)]
 struct ScriptTag<'a> {
   head: &'a str,
-  tail: &'a str
+  tail: &'a str,
+  post: ScriptTagPost<'a>
+}
+
+#[derive(Clone, Copy)]
+struct ScriptTagPost<'a> {
+  stop: &'a str
 }
 
 #[derive(Clone, Copy)]
@@ -50,9 +56,16 @@ struct OutputDir<'a> {
   mark: &'a str
 }
 
-static SRC: &str = "src.txt"; /* source filename (incl. output basename) */
-static TAG: ScriptTag = ScriptTag { head: "###", tail: "#" }; /* tag line opener and optional label closer */
-static DIR: OutputDir = OutputDir { name: "scripts", mark: ">" }; /* output directory name and placeholder */
+static SRC: &str = "src.txt";       /* source filename (incl. output basename) */
+static TAG: ScriptTag = ScriptTag { /* tag line opener, label closer and misc. later items */
+  head: "###",
+  tail: "#",
+  post: ScriptTagPost { stop: "!" }
+};
+static DIR: OutputDir = OutputDir { /* output directory name and placeholder */
+  name: "scripts",
+  mark: ">"
+};
 
 /* - data structures, remaining */
 
@@ -100,7 +113,7 @@ struct OutputFile {
 impl OutputFile {
   fn new(data: Vec<String>, code: String, i: usize, config: &Config) -> OutputFile {
 
-    let Config { src, tag: _, dir, map } = config;
+    let Config { src, tag, dir, map } = config;
 
     /* set output path parts */
 
@@ -137,8 +150,8 @@ impl OutputFile {
       let init = OutputFileInit::Text(format!("Not running file no. {} (no values)", i));
       return OutputFile { data, code, path, init, i };
     }
-    if data.get(1).unwrap() == "!" {
-      let init = OutputFileInit::Text(format!("Not running file no. {} (! applied)", i));
+    if data.get(1).unwrap() == tag.post.stop {
+      let init = OutputFileInit::Text(format!("Not running file no. {} ({} applied)", i, tag.post.stop));
       return OutputFile { data, code, path, init, i };
     }
 
@@ -185,9 +198,9 @@ fn get_doc_lines() -> [String; 5] {
   let line = format!("{} <any label {}> <OUTPUT EXTENSION or FULL OUTPUT PATH: [[dirname(s)/]basename.]extension> <COMMAND incl. any arguments>", TAG.head, TAG.tail);
 
   let data_items = String::from("By default the script is saved with the OUTPUT EXTENSION or to the FULL OUTPUT PATH then the COMMAND is run with any arguments and the output path generated.");
-  let data_chars = format!("The '!' character can be included before the OUTPUT EXTENSION or FULL OUTPUT PATH to avoid the save and run stages, or before the COMMAND to save but avoid the run stage. The '{}' character can be used in the FULL OUTPUT PATH to represent the default or overridden output directory name.", DIR.mark);
+  let data_chars = format!("The '{}' placeholder can be included before the OUTPUT EXTENSION or FULL OUTPUT PATH to avoid the save and run stages, or before the COMMAND to save but avoid the run stage. The '{}' character can be used in the FULL OUTPUT PATH to represent the default or overridden output directory name.", TAG.post.stop, DIR.mark);
 
-  let read = String::from("One or more paths can be piped to 'aliesce' to append the content at each to the source file as a script, auto-preceded by a tag line with '!', then exit.");
+  let read = format!("One or more paths can be piped to 'aliesce' to append the content at each to the source file as a script, auto-preceded by a tag line with '{}', then exit.", TAG.post.stop);
 
   [form, line, data_items, data_chars, read]
 }
@@ -226,7 +239,7 @@ fn main() {
   /* handle pushes for paths read from stdin */
   if !paths_stdin.is_empty() {
     for path in paths_stdin {
-      push(&config_base, Vec::from(["!".to_string(), path]));
+      push(&config_base, Vec::from([TAG.post.stop.to_string(), path]));
     }
     process::exit(0);
   };
@@ -350,8 +363,8 @@ fn parse_inputs_to_output(inputs: Inputs) -> Option<Output> {
     let text = format!("No tag data found for script no. {}", i);
     return Some(Output::Text(text));
   }
-  if data.get(0).unwrap() == "!" {
-    let text = format!("Bypassing script no. {} (! applied)", i);
+  if data.get(0).unwrap() == tag.post.stop {
+    let text = format!("Bypassing script no. {} ({} applied)", i, tag.post.stop);
     return Some(Output::Text(text));
   }
 
@@ -616,7 +629,7 @@ mod test {
 
   use::std::collections::HashMap;
   use super::{
-    ScriptTag,
+    ScriptTag, ScriptTagPost,
     OutputDir,
     Config, ConfigMapVal,
     Inputs,
@@ -633,7 +646,7 @@ mod test {
     let src_default_str = "src.txt";
     let src_basename_default_str = src_default_str.split(".").nth(0).unwrap();
 
-    let tag_default = ScriptTag { head: "###", tail: "#" };
+    let tag_default = ScriptTag { head: "###", tail: "#", post: ScriptTagPost { stop: "!" } };
 
     let dir_default_str = "scripts";
     let dir_default = OutputDir { name: dir_default_str, mark: ">" };

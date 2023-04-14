@@ -83,25 +83,6 @@ struct Inputs<'a> {
 }
 
 #[derive(Debug, PartialEq)]
-struct OutputFilePath {
-  dir: String,
-  basename: String,
-  ext: String
-}
-
-impl OutputFilePath {
-  fn get(&self) -> String {
-    format!("{}/{}.{}", &self.dir, &self.basename, &self.ext)
-  }
-}
-
-#[derive(Debug, PartialEq)]
-struct OutputFileInit {
-  prog: String,
-  args: Vec<String>
-}
-
-#[derive(Debug, PartialEq)]
 enum Output {
   Text(String),
   File(OutputFile)
@@ -147,20 +128,53 @@ impl OutputFile {
     /* set as ext last output filename part */
     let ext = parts_filename.iter().last().unwrap().to_string();
 
+    let path = OutputFilePath{ dir, basename, ext };
+
     /* set output init parts */
 
-    /* set as prog tag line second item else '?' indicating absence (cf. function exec below) */
-    let prog = if data.len() != 1 { data.get(1).unwrap().to_owned() } else { "?".to_string() };
-    /* set as args Vec containing tag line remaining items */
+    /* handle file run precluded */
+    if data.len() == 1 {
+      let init = OutputFileInit::Text(format!("Not running file no. {} (no values)", i));
+      return OutputFile { data, code, path, init, i };
+    }
+    if data.get(1).unwrap() == "!" {
+      let init = OutputFileInit::Text(format!("Not running file no. {} (! applied)", i));
+      return OutputFile { data, code, path, init, i };
+    }
+
+    /* set as prog tag line second item and as args Vec containing remaining items */
+    let prog = data.get(1).unwrap().to_owned();
     let args = data.iter().skip(2).map(|arg| arg.to_owned()).collect::<Vec<String>>();
 
-    /* assemble return value */
-
-    let path = OutputFilePath{ dir, basename, ext };
-    let init = OutputFileInit{ prog, args };
+    let init = OutputFileInit::Code(OutputFileInitCode { prog, args });
 
     OutputFile { data, code, path, init, i }
   }
+}
+
+#[derive(Debug, PartialEq)]
+struct OutputFilePath {
+  dir: String,
+  basename: String,
+  ext: String
+}
+
+impl OutputFilePath {
+  fn get(&self) -> String {
+    format!("{}/{}.{}", &self.dir, &self.basename, &self.ext)
+  }
+}
+
+#[derive(Debug, PartialEq)]
+enum OutputFileInit {
+  Text(String),
+  Code(OutputFileInitCode)
+}
+
+#[derive(Debug, PartialEq)]
+struct OutputFileInitCode {
+  prog: String,
+  args: Vec<String>
 }
 
 /* - utility functions, incl. DOC LINES */
@@ -366,18 +380,23 @@ fn save_output(output: &OutputFile) {
 
 fn exec_output(output: &OutputFile) {
 
-  let OutputFile { data: _, code: _, path, init, i } = output;
-  let OutputFileInit { prog, args } = init;
+  let OutputFile { data: _, code: _, path, init, i: _ } = output;
   let path = path.get();
 
-  /* handle run precluded */
-  if prog == "!" { return println!("Not running file no. {} (! applied)", i); }
-  if prog == "?" { return println!("Not running file no. {} (no values)", i); }
+  match init {
 
-  /* run script from file */
-  process::Command::new(&prog).args(args).arg(path)
-    .spawn().unwrap_or_else(|_| panic!("run file with '{}'", prog))
-    .wait_with_output().unwrap_or_else(|_| panic!("await output from '{}'", prog));
+    /* print reason file run precluded */
+    OutputFileInit::Text(s) => println!("{}", s),
+
+    /* run script from file */
+    OutputFileInit::Code(c) => {
+
+      let OutputFileInitCode { prog, args } = c;
+      process::Command::new(&prog).args(args).arg(path)
+        .spawn().unwrap_or_else(|_| panic!("run file with '{}'", prog))
+        .wait_with_output().unwrap_or_else(|_| panic!("await output from '{}'", prog));
+    }
+  }
 }
 
 /* - argument applicators */
@@ -596,7 +615,14 @@ mod test {
   /* - imports */
 
   use::std::collections::HashMap;
-  use super::{ ScriptTag, OutputDir, Config, ConfigMapVal, Inputs, Output, OutputFilePath, OutputFileInit, OutputFile, parse_inputs_to_output };
+  use super::{
+    ScriptTag,
+    OutputDir,
+    Config, ConfigMapVal,
+    Inputs,
+    Output, OutputFile, OutputFilePath, OutputFileInit, OutputFileInitCode,
+    parse_inputs_to_output
+  };
 
   /* - test cases */
 
@@ -633,7 +659,7 @@ mod test {
       basename: String::from(src_basename_default_str),
       ext
     };
-    let output_init = OutputFileInit { prog, args };
+    let output_init = OutputFileInit::Code(OutputFileInitCode { prog, args });
 
     (config_default, index, code, output_path, output_init)
   }
@@ -782,10 +808,7 @@ mod test {
     let script_plus_tag_line_part = " ext\n\n//code";
 
     let data = Vec::from(["ext".to_string()]);
-
-    let prog = String::from("?");
-    let args = Vec::from([]);
-    let init = OutputFileInit { prog, args };
+    let init = OutputFileInit::Text(String::from("Not running file no. 1 (no values)"));
 
     let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
     let obtained = parse_inputs_to_output(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });

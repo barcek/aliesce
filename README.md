@@ -2,12 +2,13 @@
 
 Write, save and run scripts in multiple languages from a single source file.
 
-- [Why..?](#why)
-- [How..?](#how)
+- [Why?](#why)
+- [How?](#how)
   - [Source file setup](#source-file-setup)
   - [Running aliesce](#running-aliesce)
   - [There's more...](#theres-more)
     - [Specifying paths](#specifying-paths)
+    - [Extending commands](#extending-commands)
     - [Avoiding stages](#avoiding-stages)
     - [Labelling scripts](#labelling-scripts)
 - [Options](#options)
@@ -35,8 +36,7 @@ Add the scripts to the file.
 Immediately above each script, insert a tag line starting by default `###`. Include in the tag line the following elements:
 
 - the file extension for that language, or the full output filename including extension, or the full output path including directory and extension
-- the command to run the file, if any
-- any arguments to pass to that command
+- the command to be run, if any, e.g. the program to be used to run the file and any arguments to pass to that program - the path to the file is added as the final argument by default
 
 Ensure each element is separated by one or more spaces.
 
@@ -46,7 +46,7 @@ For example, a possible tag line for a script in Elixir:
 ### exs elixir -r setup
 ```
 
-This tells aliesce to save the script following the tag line in a file with the `exs` extension, then run that with the `elixir` command, applying one option, to require a file named 'setup'.
+This tells aliesce to save the script following the tag line in a file with the `exs` extension, then run that file with the `elixir` command, applying one option, to require a file named 'setup'.
 
 A template source file can be created and scripts written in other files appended to an existing file via the command line (see [Options](#options) below).
 
@@ -84,6 +84,14 @@ For a subdirectory within the default or overridden output directory, a placehol
 
 ```
 ### >/elixir/script.exs elixir -r setup
+```
+
+#### Extending commands
+
+For a command in which the path to the file is not the last argument, e.g. when piping to another program, a placeholder can be used, by default `><`. The whole is then run by the default program-flag pair `bash -c`. For a command of `bash -c "elixir -r setup scripts/src.exs | sort"`:
+
+```
+### exs elixir -r setup >< | sort
 ```
 
 #### Avoiding stages

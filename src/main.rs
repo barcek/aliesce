@@ -210,8 +210,8 @@ fn get_doc_lines() -> [String; 5] {
   let form = format!("The default source file path is '{}'. Each script in the source file requires a preceding tag line. A tag line begins with the tag head ('{}') and has an optional label with the tag tail ('{}'). The format is shown below.", SRC, TAG.head, TAG.tail);
   let line = format!("{} <any label {}> <OUTPUT EXTENSION or FULL OUTPUT PATH: [[dirname(s)/]basename.]extension> <COMMAND incl. any arguments>", TAG.head, TAG.tail);
 
-  let data_items = String::from("By default the script is saved with the OUTPUT EXTENSION or to the FULL OUTPUT PATH then the COMMAND is run with any arguments and the output path generated.");
-  let data_chars = format!("The '{}' placeholder can be included before the OUTPUT EXTENSION or FULL OUTPUT PATH to avoid the save and run stages, or before the COMMAND to save but avoid the run stage. The '{}' character can be used in the FULL OUTPUT PATH to represent the default or overridden output directory name.", TAG.post.stop, TAG.post.path_dir);
+  let data_items = format!("By default the script is saved with the OUTPUT EXTENSION or to the FULL OUTPUT PATH then the COMMAND is run with the path generated. The '{}' placeholder can be used in the COMMAND to denote path position and pass the whole to '{} {}'.", TAG.post.path_all, TAG.post.prog, TAG.post.flag);
+  let data_chars = format!("The '{}' placeholder can be included before the OUTPUT EXTENSION or FULL OUTPUT PATH to avoid the save and run stages, or before the COMMAND to save but avoid the run stage. The '{}' placeholder can be used in the FULL OUTPUT PATH to represent the default or overridden output directory name.", TAG.post.stop, TAG.post.path_dir);
 
   let read = format!("One or more paths can be piped to 'aliesce' to append the content at each to the source file as a script, auto-preceded by a tag line with '{}', then exit.", TAG.post.stop);
 

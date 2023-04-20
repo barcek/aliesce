@@ -44,8 +44,11 @@ static TAG: ScriptTag = ScriptTag { /* tag line opener, label closer and misc. l
   head: "###",
   tail: "#",
   post: ScriptTagPost {
+    stop:     "!",
     path_dir: ">",
-    stop:     "!"
+    path_all: "><",
+    prog:     "bash",
+    flag:     "-c"
   }
 };
 
@@ -58,8 +61,11 @@ struct ScriptTag<'a> {
 
 #[derive(Clone, Copy)]
 struct ScriptTagPost<'a> {
+  stop:     &'a str,
   path_dir: &'a str,
-  stop:     &'a str
+  path_all: &'a str,
+  prog:     &'a str,
+  flag:     &'a str
 }
 
 /* - data structures, remaining */
@@ -150,9 +156,21 @@ impl OutputFile {
       return OutputFile { data, code, path, init, i };
     }
 
-    /* set as prog tag line second item and as args Vec containing remaining items */
-    let prog = data.get(1).unwrap().to_owned();
-    let args = data.iter().skip(2).map(|arg| arg.to_owned()).collect::<Vec<String>>();
+    /* note presence of output path placeholder, as indicator of composite command */
+    let has_placeholder = data.iter().skip(1).any(|item| tag.post.path_all == item);
+
+    /* set as prog either tag line second item or default */
+    let prog = if has_placeholder { String::from(tag.post.prog) } else { data.get(1).unwrap().to_owned() };
+    /* set as args either Vec containing remaining items plus combined path or default flag plus remaining items joined */
+    let mut args = Vec::from([]);
+    if has_placeholder {
+      args.push(tag.post.flag.to_owned());
+      args.push(data.iter().skip(1).map(|item| if tag.post.path_all == item { path.get() } else { item.to_owned() }).collect::<Vec<String>>().join(" "));
+    }
+    else {
+      args.append(&mut data.iter().skip(2).map(|arg| arg.to_owned()).collect::<Vec<String>>());
+      args.push(path.get());
+    };
 
     let init = OutputFileInit::Code(OutputFileInitCode { prog, args });
 
@@ -388,8 +406,7 @@ fn save_output(output: &OutputFile) {
 
 fn exec_output(output: &OutputFile) {
 
-  let OutputFile { data: _, code: _, path, init, i: _ } = output;
-  let path = path.get();
+  let OutputFile { data: _, code: _, path: _, init, i: _ } = output;
 
   match init {
 
@@ -398,9 +415,8 @@ fn exec_output(output: &OutputFile) {
 
     /* run script from file */
     OutputFileInit::Code(c) => {
-
       let OutputFileInitCode { prog, args } = c;
-      process::Command::new(&prog).args(args).arg(path)
+      process::Command::new(&prog).args(args)
         .spawn().unwrap_or_else(|_| panic!("run file with '{}'", prog))
         .wait_with_output().unwrap_or_else(|_| panic!("await output from '{}'", prog));
     }
@@ -640,7 +656,7 @@ mod test {
     let src_default_str = "src.txt";
     let src_basename_default_str = src_default_str.split(".").nth(0).unwrap();
 
-    let tag_default = ScriptTag { head: "###", tail: "#", post: ScriptTagPost { path_dir: ">", stop: "!" } };
+    let tag_default = ScriptTag { head: "###", tail: "#", post: ScriptTagPost { stop: "!", path_dir: ">", path_all: "><", prog: "bash", flag: "-c" } };
     let dir_default = "scripts";
 
     let map_default = HashMap::new();
@@ -653,17 +669,20 @@ mod test {
     };
 
     /* base test script values */
-    let index = 1;
+
     let ext   = String::from("ext");
-    let prog  = String::from("program");
-    let args  = Vec::from([String::from("--flag"), String::from("value")]);
-    let code  = String::from("//code");
 
     let output_path = OutputFilePath {
       dir: String::from(dir_default),
       basename: String::from(src_basename_default_str),
       ext
     };
+
+    let index = 1;
+    let prog  = String::from("program");
+    let args  = Vec::from([String::from("--flag"), String::from("value"), output_path.get()]);
+    let code  = String::from("//code");
+
     let output_init = OutputFileInit::Code(OutputFileInitCode { prog, args });
 
     (config_default, index, code, output_path, output_init)
@@ -698,7 +717,7 @@ mod test {
   #[test]
   fn parse_inputs_returns_for_dest_option_some_output_file() {
 
-    let (mut config_default, i, code, _, init) = get_values_for_parse_inputs();
+    let (mut config_default, i, code, _, _) = get_values_for_parse_inputs();
     let script_plus_tag_line_part = " ext program --flag value\n\n//code";
 
     let data = Vec::from(["ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
@@ -707,6 +726,10 @@ mod test {
     let basename = String::from(config_default.src.split(".").nth(0).unwrap());
     let ext = String::from("ext");
     let path = OutputFilePath { dir, basename, ext };
+
+    let prog = String::from("program");
+    let args = Vec::from([String::from("--flag"), String::from("value"), path.get()]);
+    let init = OutputFileInit::Code(OutputFileInitCode { prog, args });
 
     config_default.map.insert("dest".to_string(), ConfigMapVal::Strs(Vec::from([String::from("dest")])));
 
@@ -733,7 +756,7 @@ mod test {
   #[test]
   fn parse_inputs_returns_for_tag_data_full_incl_singlepart_output_basename_some_output_file() {
 
-    let (config_default, i, code, _, init) = get_values_for_parse_inputs();
+    let (config_default, i, code, _, _) = get_values_for_parse_inputs();
     let script_plus_tag_line_part = " script.ext program --flag value\n\n//code";
 
     let data = Vec::from(["script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
@@ -742,6 +765,10 @@ mod test {
     let basename = String::from("script");
     let ext = String::from("ext");
     let path = OutputFilePath { dir, basename, ext };
+
+    let prog = String::from("program");
+    let args = Vec::from([String::from("--flag"), String::from("value"), path.get()]);
+    let init = OutputFileInit::Code(OutputFileInitCode { prog, args });
 
     let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
     let obtained = parse_inputs_to_output(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
@@ -752,7 +779,7 @@ mod test {
   #[test]
   fn parse_inputs_returns_for_tag_data_full_incl_multipart_output_basename_some_output_file() {
 
-    let (config_default, i, code, _, init) = get_values_for_parse_inputs();
+    let (config_default, i, code, _, _) = get_values_for_parse_inputs();
     let script_plus_tag_line_part = " script.suffix1.suffix2.ext program --flag value\n\n//code";
 
     let data = Vec::from(["script.suffix1.suffix2.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
@@ -761,6 +788,10 @@ mod test {
     let basename = String::from("script.suffix1.suffix2");
     let ext = String::from("ext");
     let path = OutputFilePath { dir, basename, ext };
+
+    let prog = String::from("program");
+    let args = Vec::from([String::from("--flag"), String::from("value"), path.get()]);
+    let init = OutputFileInit::Code(OutputFileInitCode { prog, args });
 
     let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
     let obtained = parse_inputs_to_output(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
@@ -771,7 +802,7 @@ mod test {
   #[test]
   fn parse_inputs_returns_for_tag_data_full_incl_output_dir_some_output_file() {
 
-    let (config_default, i, code, _, init) = get_values_for_parse_inputs();
+    let (config_default, i, code, _, _) = get_values_for_parse_inputs();
     let script_plus_tag_line_part = " dir/script.ext program --flag value\n\n//code";
 
     let data = Vec::from(["dir/script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
@@ -781,6 +812,10 @@ mod test {
     let ext = String::from("ext");
     let path = OutputFilePath { dir, basename, ext };
 
+    let prog = String::from("program");
+    let args = Vec::from([String::from("--flag"), String::from("value"), path.get()]);
+    let init = OutputFileInit::Code(OutputFileInitCode { prog, args });
+
     let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
     let obtained = parse_inputs_to_output(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
 
@@ -788,9 +823,9 @@ mod test {
   }
 
   #[test]
-  fn parse_inputs_returns_for_tag_data_full_incl_output_dir_placeholder_some_output_file() {
+  fn parse_inputs_returns_for_tag_data_full_incl_output_path_dir_placeholder_some_output_file() {
 
-    let (config_default, i, code, _, init) = get_values_for_parse_inputs();
+    let (config_default, i, code, _, _) = get_values_for_parse_inputs();
     let script_plus_tag_line_part = " >/script.ext program --flag value\n\n//code";
 
     let data = Vec::from([">/script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
@@ -799,6 +834,27 @@ mod test {
     let basename = String::from("script");
     let ext = String::from("ext");
     let path = OutputFilePath { dir, basename, ext };
+
+    let prog = String::from("program");
+    let args = Vec::from([String::from("--flag"), String::from("value"), path.get()]);
+    let init = OutputFileInit::Code(OutputFileInitCode { prog, args });
+
+    let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
+    let obtained = parse_inputs_to_output(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
+
+    assert_eq!(expected, obtained);
+  }
+
+  #[test]
+  fn parse_inputs_returns_for_tag_data_full_incl_ouput_path_all_placeholder_some_output() {
+
+    let (config_default, i, code, path, _) = get_values_for_parse_inputs();
+    let script_plus_tag_line_part = " ext program_1 --flag value >< | program_2\n\n//code";
+    let data = Vec::from(["ext".to_string(), "program_1".to_string(), "--flag".to_string(), "value".to_string(), "><".to_string(), "|".to_string(), "program_2".to_string()]);
+
+    let prog = String::from(config_default.tag.post.prog);
+    let args = Vec::from([String::from(config_default.tag.post.flag), String::from("program_1 --flag value scripts/src.ext | program_2")]);
+    let init = OutputFileInit::Code(OutputFileInitCode { prog, args });
 
     let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
     let obtained = parse_inputs_to_output(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });

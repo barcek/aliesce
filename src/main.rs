@@ -663,7 +663,7 @@ mod test {
 
     /* base test script values */
 
-    let ext   = String::from("ext");
+    let ext = String::from("ext");
 
     let output_path = OutputFilePath {
       dir: String::from(dir_default),
@@ -710,7 +710,7 @@ mod test {
   #[test]
   fn parse_inputs_returns_for_dest_option_some_output_file() {
 
-    let (mut config_default, i, code, _, _) = get_values_for_parse_inputs();
+    let (mut config_default, i, code, _, mut init) = get_values_for_parse_inputs();
     let script_plus_tag_line_part = " ext program --flag value\n\n//code";
 
     let data = Vec::from(["ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
@@ -720,10 +720,7 @@ mod test {
     let ext = String::from("ext");
     let path = OutputFilePath { dir, basename, ext };
 
-    let prog = String::from("program");
-    let args = Vec::from([String::from("--flag"), String::from("value"), path.get()]);
-    let init = OutputFileInit::Code(OutputFileInitCode { prog, args });
-
+    match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
     config_default.map.insert("dest".to_string(), ConfigMapVal::Strs(Vec::from([String::from("dest")])));
 
     let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
@@ -749,7 +746,7 @@ mod test {
   #[test]
   fn parse_inputs_returns_for_tag_data_full_incl_singlepart_output_basename_some_output_file() {
 
-    let (config_default, i, code, _, _) = get_values_for_parse_inputs();
+    let (config_default, i, code, _, mut init) = get_values_for_parse_inputs();
     let script_plus_tag_line_part = " script.ext program --flag value\n\n//code";
 
     let data = Vec::from(["script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
@@ -759,9 +756,7 @@ mod test {
     let ext = String::from("ext");
     let path = OutputFilePath { dir, basename, ext };
 
-    let prog = String::from("program");
-    let args = Vec::from([String::from("--flag"), String::from("value"), path.get()]);
-    let init = OutputFileInit::Code(OutputFileInitCode { prog, args });
+    match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
 
     let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
     let obtained = parse_inputs_to_output(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
@@ -772,7 +767,7 @@ mod test {
   #[test]
   fn parse_inputs_returns_for_tag_data_full_incl_multipart_output_basename_some_output_file() {
 
-    let (config_default, i, code, _, _) = get_values_for_parse_inputs();
+    let (config_default, i, code, _, mut init) = get_values_for_parse_inputs();
     let script_plus_tag_line_part = " script.suffix1.suffix2.ext program --flag value\n\n//code";
 
     let data = Vec::from(["script.suffix1.suffix2.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
@@ -782,9 +777,7 @@ mod test {
     let ext = String::from("ext");
     let path = OutputFilePath { dir, basename, ext };
 
-    let prog = String::from("program");
-    let args = Vec::from([String::from("--flag"), String::from("value"), path.get()]);
-    let init = OutputFileInit::Code(OutputFileInitCode { prog, args });
+    match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
 
     let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
     let obtained = parse_inputs_to_output(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
@@ -795,7 +788,7 @@ mod test {
   #[test]
   fn parse_inputs_returns_for_tag_data_full_incl_output_dir_some_output_file() {
 
-    let (config_default, i, code, _, _) = get_values_for_parse_inputs();
+    let (config_default, i, code, _, mut init) = get_values_for_parse_inputs();
     let script_plus_tag_line_part = " dir/script.ext program --flag value\n\n//code";
 
     let data = Vec::from(["dir/script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
@@ -805,9 +798,7 @@ mod test {
     let ext = String::from("ext");
     let path = OutputFilePath { dir, basename, ext };
 
-    let prog = String::from("program");
-    let args = Vec::from([String::from("--flag"), String::from("value"), path.get()]);
-    let init = OutputFileInit::Code(OutputFileInitCode { prog, args });
+    match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
 
     let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
     let obtained = parse_inputs_to_output(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
@@ -818,7 +809,7 @@ mod test {
   #[test]
   fn parse_inputs_returns_for_tag_data_full_incl_output_path_dir_placeholder_some_output_file() {
 
-    let (config_default, i, code, _, _) = get_values_for_parse_inputs();
+    let (config_default, i, code, _, mut init) = get_values_for_parse_inputs();
     let script_plus_tag_line_part = " >/script.ext program --flag value\n\n//code";
 
     let data = Vec::from([">/script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
@@ -828,9 +819,7 @@ mod test {
     let ext = String::from("ext");
     let path = OutputFilePath { dir, basename, ext };
 
-    let prog = String::from("program");
-    let args = Vec::from([String::from("--flag"), String::from("value"), path.get()]);
-    let init = OutputFileInit::Code(OutputFileInitCode { prog, args });
+    match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
 
     let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
     let obtained = parse_inputs_to_output(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
@@ -839,7 +828,7 @@ mod test {
   }
 
   #[test]
-  fn parse_inputs_returns_for_tag_data_full_incl_ouput_path_all_placeholder_some_output() {
+  fn parse_inputs_returns_for_tag_data_full_incl_output_path_all_placeholder_some_output() {
 
     let (config_default, i, code, path, _) = get_values_for_parse_inputs();
     let script_plus_tag_line_part = " ext program_1 --flag value >< | program_2\n\n//code";

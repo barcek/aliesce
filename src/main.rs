@@ -38,34 +38,27 @@ use crate::args::{ CLIOption, update_config };
 
 /* - DEFAULT VALUES, incl. data structures */
 
-static SRC: &str = "src.txt";       /* source filename (incl. output basename) */
-static DIR: &str = "scripts";       /* output directory name */
-static TAG: ScriptTag = ScriptTag { /* tag line opener, label closer and misc. later items */
-  head: "###",
-  tail: "#",
-  post: ScriptTagPost {
-    stop:     "!",
-    path_dir: ">",
-    path_all: "><",
-    prog:     "bash",
-    flag:     "-c"
-  }
+static SRC_PATH: &str = "src.txt";               /* source file path (incl. output basename) */
+static DEST_DIR: &str = "scripts";               /* output directory name */
+static TAG_LINE: ScriptTagLine = ScriptTagLine { /* tag line opener and label closer, signals, placeholders and command parts */
+  tag_head:      "###",
+  tag_tail:      "#",
+  sig_stop:      "!",
+  plc_path_dir:  ">",
+  plc_path_all:  "><",
+  cmd_prog:      "bash",
+  cmd_flag:      "-c"
 };
 
 #[derive(Clone, Copy)]
-struct ScriptTag<'a> {
-  head: &'a str,
-  tail: &'a str,
-  post: ScriptTagPost<'a>
-}
-
-#[derive(Clone, Copy)]
-struct ScriptTagPost<'a> {
-  stop:     &'a str,
-  path_dir: &'a str,
-  path_all: &'a str,
-  prog:     &'a str,
-  flag:     &'a str
+struct ScriptTagLine<'a> {
+  tag_head:     &'a str,
+  tag_tail:     &'a str,
+  sig_stop:     &'a str,
+  plc_path_dir: &'a str,
+  plc_path_all: &'a str,
+  cmd_prog:     &'a str,
+  cmd_flag:     &'a str
 }
 
 /* - data structures, remaining */
@@ -83,7 +76,7 @@ pub type ConfigMap = HashMap<String, ConfigMapVal>;
 
 pub struct Config<'a> {
   src: String,
-  tag: ScriptTag<'a>,
+  tag: ScriptTagLine<'a>,
   dir: &'a str,
   map: ConfigMap
 }
@@ -130,7 +123,7 @@ impl OutputFile {
     };
 
     /* handle output directory identified by directory placeholder */
-    if tag.post.path_dir == parts_path[0] { parts_path[0] = dirname };
+    if tag.plc_path_dir == parts_path[0] { parts_path[0] = dirname };
     /* get output filename parts - separate last output path part and break on '.' */
     let parts_filename = parts_path.split_off(parts_path.len() - 1).last().unwrap().split('.').collect::<Vec<&str>>();
     let p_f_len = parts_filename.len();
@@ -151,21 +144,21 @@ impl OutputFile {
       let init = OutputFileInit::Text(format!("Not running file no. {} (no values)", i));
       return OutputFile { data, code, path, init, i };
     }
-    if data.get(1).unwrap() == tag.post.stop {
-      let init = OutputFileInit::Text(format!("Not running file no. {} ({} applied)", i, tag.post.stop));
+    if data.get(1).unwrap() == tag.sig_stop {
+      let init = OutputFileInit::Text(format!("Not running file no. {} ({} applied)", i, tag.sig_stop));
       return OutputFile { data, code, path, init, i };
     }
 
     /* note presence of output path placeholder, as indicator of composite command */
-    let has_placeholder = data.iter().skip(1).any(|item| tag.post.path_all == item);
+    let has_placeholder = data.iter().skip(1).any(|item| tag.plc_path_all == item);
 
     /* set as prog either tag line second item or default */
-    let prog = if has_placeholder { String::from(tag.post.prog) } else { data.get(1).unwrap().to_owned() };
+    let prog = if has_placeholder { String::from(tag.cmd_prog) } else { data.get(1).unwrap().to_owned() };
     /* set as args either Vec containing remaining items plus combined path or default flag plus remaining items joined */
     let mut args = Vec::from([]);
     if has_placeholder {
-      args.push(tag.post.flag.to_owned());
-      args.push(data.iter().skip(1).map(|item| if tag.post.path_all == item { path.get() } else { item.to_owned() }).collect::<Vec<String>>().join(" "));
+      args.push(tag.cmd_flag.to_owned());
+      args.push(data.iter().skip(1).map(|item| if tag.plc_path_all == item { path.get() } else { item.to_owned() }).collect::<Vec<String>>().join(" "));
     }
     else {
       args.append(&mut data.iter().skip(2).map(|arg| arg.to_owned()).collect::<Vec<String>>());
@@ -207,13 +200,13 @@ struct OutputFileInitCode {
 
 fn get_doc_lines() -> [String; 5] {
 
-  let form = format!("The default source file path is '{}'. Each script in the source file requires a preceding tag line. A tag line begins with the tag head ('{}') and has an optional label with the tag tail ('{}'). The format is shown below.", SRC, TAG.head, TAG.tail);
-  let line = format!("{} <any label {}> <OUTPUT EXTENSION or FULL OUTPUT PATH: [[dirname(s)/]basename.]extension> <COMMAND incl. any arguments>", TAG.head, TAG.tail);
+  let form = format!("The default source file path is '{}'. Each script in the source file requires a preceding tag line. A tag line begins with the tag head ('{}') and has an optional label with the tag tail ('{}'). The format is shown below.", SRC_PATH, TAG_LINE.tag_head, TAG_LINE.tag_tail);
+  let line = format!("{} <any label {}> <OUTPUT EXTENSION or FULL OUTPUT PATH: [[dirname(s)/]basename.]extension> <COMMAND incl. any arguments>", TAG_LINE.tag_head, TAG_LINE.tag_tail);
 
-  let data_items = format!("By default the script is saved with the OUTPUT EXTENSION or to the FULL OUTPUT PATH then the COMMAND is run with the path generated. The '{}' placeholder can be used in the COMMAND to denote path position and pass the whole to '{} {}'.", TAG.post.path_all, TAG.post.prog, TAG.post.flag);
-  let data_chars = format!("The '{}' placeholder can be included before the OUTPUT EXTENSION or FULL OUTPUT PATH to avoid the save and run stages, or before the COMMAND to save but avoid the run stage. The '{}' placeholder can be used in the FULL OUTPUT PATH to represent the default or overridden output directory name.", TAG.post.stop, TAG.post.path_dir);
+  let data_items = format!("By default the script is saved with the OUTPUT EXTENSION or to the FULL OUTPUT PATH then the COMMAND is run with the path generated. The '{}' placeholder can be used in the COMMAND to denote path position and pass the whole to '{} {}'.", TAG_LINE.plc_path_all, TAG_LINE.cmd_prog, TAG_LINE.cmd_flag);
+  let data_chars = format!("The '{}' signal can be included before the OUTPUT EXTENSION or FULL OUTPUT PATH to avoid both the save and run stages, or before the COMMAND to save but avoid the run stage. The '{}' placeholder can be used in the FULL OUTPUT PATH to represent the default or overridden output directory name.", TAG_LINE.sig_stop, TAG_LINE.plc_path_dir);
 
-  let read = format!("One or more paths can be piped to 'aliesce' to append the content at each to the source file as a script, auto-preceded by a tag line with '{}', then exit.", TAG.post.stop);
+  let read = format!("One or more paths can be piped to 'aliesce' to append the content at each to the source file as a script, auto-preceded by a tag line with '{}', then exit.", TAG_LINE.sig_stop);
 
   [form, line, data_items, data_chars, read]
 }
@@ -237,22 +230,22 @@ fn main() {
   let args_on_cli = env::args().skip(1).collect::<Vec<String>>();
 
   let cli_options = Vec::from([
-    CLIOption::new("dest", "d", &["DIR"], &*format!("set the default output directory name (currently '{}') to DIR", DIR), &apply_cli_option_dest),
+    CLIOption::new("dest", "d", &["DIR"], &*format!("set the default output directory name (currently '{}') to DIR", DEST_DIR), &apply_cli_option_dest),
     CLIOption::new("list", "l", &[], "print for each script in the source file its number and tag line content, skipping the save and run stages", &apply_cli_option_list),
     CLIOption::new("only", "o", &["SUBSET"], "include only scripts the numbers of which appear in SUBSET, comma-separated and/or in dash-indicated ranges, e.g. -o 1,3-5", &apply_cli_option_only),
     CLIOption::new("push", "p", &["LINE", "PATH"], "append to the source file LINE, auto-prefixed with a tag, followed by the content at PATH then exit", &apply_cli_option_push),
-    CLIOption::new("init", "i", &[], &*format!("create a template source file at the default source file path (currently '{}') then exit", SRC), &apply_cli_option_init),
+    CLIOption::new("init", "i", &[], &*format!("create a template source file at the default source file path (currently '{}') then exit", SRC_PATH), &apply_cli_option_init),
     CLIOption::new_help()
   ]);
 
   /* set config per defaults and args on CLI */
-  let config_init = Config { src: String::from(SRC), tag: TAG, dir: DIR, map: HashMap::new() };
+  let config_init = Config { src: String::from(SRC_PATH), tag: TAG_LINE, dir: DEST_DIR, map: HashMap::new() };
   let config_base = update_config(config_init, &cli_options, &apply_args_remaining_cli, args_on_cli);
 
   /* handle pushes for paths read from stdin */
   if !paths_stdin.is_empty() {
     for path in paths_stdin {
-      push(&config_base, Vec::from([TAG.post.stop.to_string(), path]));
+      push(&config_base, Vec::from([TAG_LINE.sig_stop.to_string(), path]));
     }
     process::exit(0);
   };
@@ -264,7 +257,7 @@ fn main() {
   /* get args section plus each source string (script with tag line minus tag head) numbered, excl. init option content */
   let [form, line, _, _, _] = &get_doc_lines();
   let content_added = content_whole.replace(form, "").replace(line, "");
-  let mut content_parts = content_added.split(config_base.tag.head).enumerate().collect::<Vec<(usize, &str)>>();
+  let mut content_parts = content_added.split(config_base.tag.tag_head).enumerate().collect::<Vec<(usize, &str)>>();
 
   /* remove any shebang line in args section */
   if "#!" == &content_parts[0].1[..2] {
@@ -316,7 +309,7 @@ fn push(config: &Config, strs: Vec<String>) {
 
   let script = fs::read_to_string(script_filename)
     .unwrap_or_else(|err| error((&format!("Not parsing script file '{}'", script_filename), Some("read"), Some(err))));
-  let tag_line = format!("{} {}", tag.head, strs[0]);
+  let tag_line = format!("{} {}", tag.tag_head, strs[0]);
   let script_plus_tag_line = format!("\n{}\n\n{}", tag_line, script);
 
   /* handle write */
@@ -349,11 +342,11 @@ fn parse_inputs_to_output(inputs: Inputs) -> Option<Output> {
   let tag_line_part = lines.nth(0).unwrap();
 
   /* get label and data from tag line */
-  let tag_line_sections = match tag_line_part.find(tag.tail) {
+  let tag_line_sections = match tag_line_part.find(tag.tag_tail) {
     Some(i) => tag_line_part.split_at(i + 1),
     None    => ("", tag_line_part)
   };
-  let tag_line_label = tag_line_sections.0.split(tag.tail).nth(0).unwrap(); /* untrimmed */
+  let tag_line_label = tag_line_sections.0.split(tag.tag_tail).nth(0).unwrap(); /* untrimmed */
   let tag_line_data  = tag_line_sections.1.trim();
 
   /* handle option - list - print only */
@@ -376,8 +369,8 @@ fn parse_inputs_to_output(inputs: Inputs) -> Option<Output> {
     let text = format!("No tag data found for script no. {}", i);
     return Some(Output::Text(text));
   }
-  if data.get(0).unwrap() == tag.post.stop {
-    let text = format!("Bypassing script no. {} ({} applied)", i, tag.post.stop);
+  if data.get(0).unwrap() == tag.sig_stop {
+    let text = format!("Bypassing script no. {} ({} applied)", i, tag.sig_stop);
     return Some(Output::Text(text));
   }
 
@@ -640,7 +633,7 @@ mod test {
 
   use::std::collections::HashMap;
   use super::{
-    ScriptTag, ScriptTagPost,
+    ScriptTagLine,
     Config, ConfigMapVal,
     Inputs,
     Output, OutputFile, OutputFilePath, OutputFileInit, OutputFileInitCode,
@@ -656,7 +649,7 @@ mod test {
     let src_default_str = "src.txt";
     let src_basename_default_str = src_default_str.split(".").nth(0).unwrap();
 
-    let tag_default = ScriptTag { head: "###", tail: "#", post: ScriptTagPost { stop: "!", path_dir: ">", path_all: "><", prog: "bash", flag: "-c" } };
+    let tag_default = ScriptTagLine { tag_head: "###", tag_tail: "#", sig_stop: "!", plc_path_dir: ">", plc_path_all: "><", cmd_prog: "bash", cmd_flag: "-c" };
     let dir_default = "scripts";
 
     let map_default = HashMap::new();
@@ -852,8 +845,8 @@ mod test {
     let script_plus_tag_line_part = " ext program_1 --flag value >< | program_2\n\n//code";
     let data = Vec::from(["ext".to_string(), "program_1".to_string(), "--flag".to_string(), "value".to_string(), "><".to_string(), "|".to_string(), "program_2".to_string()]);
 
-    let prog = String::from(config_default.tag.post.prog);
-    let args = Vec::from([String::from(config_default.tag.post.flag), String::from("program_1 --flag value scripts/src.ext | program_2")]);
+    let prog = String::from(config_default.tag.cmd_prog);
+    let args = Vec::from([String::from(config_default.tag.cmd_flag), String::from("program_1 --flag value scripts/src.ext | program_2")]);
     let init = OutputFileInit::Code(OutputFileInitCode { prog, args });
 
     let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));

@@ -260,7 +260,7 @@ fn main() {
   let mut content_parts = content_added.split(config_base.tag.tag_head).enumerate().collect::<Vec<(usize, &str)>>();
 
   /* remove any shebang line in args section */
-  if "#!" == &content_parts[0].1[..2] {
+  if &content_parts[0].1.len() >= &2 && "#!" == &content_parts[0].1[..2] {
     let remainder = content_parts[0].1.splitn(2, '\n').last().unwrap();
     content_parts[0] = (content_parts[0].0, remainder);
   }

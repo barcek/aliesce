@@ -34,7 +34,7 @@ use std::fs;
 use std::process;
 use std::collections::HashMap;
 
-use crate::args::{ CLIOption, update_config };
+use crate::args::{ CLIOption, config_update };
 
 /* - DEFAULT VALUES, incl. data structures */
 
@@ -198,7 +198,7 @@ struct OutputFileInitCode {
 
 /* - utility functions, incl. DOC LINES */
 
-fn get_doc_lines() -> [String; 5] {
+fn doc_lines_get() -> [String; 5] {
 
   let form = format!("The default source file path is '{}'. Each script in the source file requires a preceding tag line. A tag line begins with the tag head ('{}') and has an optional label with the tag tail ('{}'). The format is shown below.", SRC_PATH, TAG_LINE.tag_head, TAG_LINE.tag_tail);
   let line = format!("{} <any label {}> <OUTPUT EXTENSION or FULL OUTPUT PATH: [[dirname(s)/]basename.]extension> <COMMAND incl. any arguments>", TAG_LINE.tag_head, TAG_LINE.tag_tail);
@@ -211,7 +211,7 @@ fn get_doc_lines() -> [String; 5] {
   [form, line, data_items, data_chars, read]
 }
 
-fn push(config: &Config, strs: Vec<String>) {
+fn script_push(config: &Config, strs: Vec<String>) {
 
   let script_filename = &strs[1];
   let Config { src, tag, dir: _, map: _ } = config;
@@ -219,7 +219,7 @@ fn push(config: &Config, strs: Vec<String>) {
   /* handle read */
 
   let script = fs::read_to_string(script_filename)
-    .unwrap_or_else(|err| error((&format!("Not parsing script file '{}'", script_filename), Some("read"), Some(err))));
+    .unwrap_or_else(|err| error_handle((&format!("Not parsing script file '{}'", script_filename), Some("read"), Some(err))));
   let tag_line = format!("{} {}", tag.tag_head, strs[0]);
   let script_plus_tag_line = format!("\n{}\n\n{}", tag_line, script);
 
@@ -231,13 +231,13 @@ fn push(config: &Config, strs: Vec<String>) {
   let sum_success = format!("Appended {}", sum_base);
 
   let mut file = fs::OpenOptions::new().append(true).open(src)
-    .unwrap_or_else(|err| error((&sum_failure, Some("open"), Some(err))));
+    .unwrap_or_else(|err| error_handle((&sum_failure, Some("open"), Some(err))));
   file.write_all(&script_plus_tag_line.into_bytes())
-    .unwrap_or_else(|err| error((&sum_failure, Some("write"), Some(err))));
+    .unwrap_or_else(|err| error_handle((&sum_failure, Some("write"), Some(err))));
   println!("{}", sum_success);
 }
 
-fn error(strs: (&String, Option<&str>, Option<io::Error>)) -> ! {
+fn error_handle(strs: (&String, Option<&str>, Option<io::Error>)) -> ! {
   match strs {
     (sum, Some(act), Some(err)) => eprintln!("{} ({} error: '{}')", sum, act, err),
     (sum, None, None)           => eprintln!("{}", sum),
@@ -251,26 +251,26 @@ fn error(strs: (&String, Option<&str>, Option<io::Error>)) -> ! {
 fn main() {
 
   /* set config per defaults, CLI options and args on CLI */
-  let cli_options = get_cli_options();
+  let cli_options = cli_options_get();
   let args_on_cli = env::args().skip(1).collect::<Vec<String>>();
   let config_init = Config { src: String::from(SRC_PATH), tag: TAG_LINE, dir: DEST_DIR, map: HashMap::new() };
-  let config_base = update_config(config_init, &cli_options, &apply_args_remaining_cli, args_on_cli);
+  let config_base = config_update(config_init, &cli_options, &args_remaining_cli_apply, args_on_cli);
 
   /* handle any pushes to script file for paths via stdin */
-  let paths_stdin = read_stdin();
+  let paths_stdin = stdin_read();
   if !paths_stdin.is_empty() {
     for path in paths_stdin {
-      push(&config_base, Vec::from([TAG_LINE.sig_stop.to_string(), path]));
+      script_push(&config_base, Vec::from([TAG_LINE.sig_stop.to_string(), path]));
     }
     process::exit(0);
   };
 
   /* load script file content or exit early */
   let content_whole = fs::read_to_string(&config_base.src)
-    .unwrap_or_else(|err| error((&format!("Not parsing source file '{}'", config_base.src), Some("read"), Some(err))));
+    .unwrap_or_else(|err| error_handle((&format!("Not parsing source file '{}'", config_base.src), Some("read"), Some(err))));
 
   /* get args section plus each source string (script with tag line minus tag head) numbered, excl. init option content */
-  let [form, line, _, _, _] = &get_doc_lines();
+  let [form, line, _, _, _] = &doc_lines_get();
   let content_added = content_whole.replace(form, "").replace(line, "");
   let mut content_parts = content_added.split(config_base.tag.tag_head).enumerate().collect::<Vec<(usize, &str)>>();
 
@@ -282,20 +282,20 @@ fn main() {
 
   /* update config to encompass args section */
   let args_in_src = content_parts[0].1.split_whitespace().map(|part| part.trim().to_string()).filter(|part| !part.is_empty()).collect::<Vec<String>>();
-  let config_full = update_config(config_base, &cli_options, &apply_args_remaining_src, args_in_src);
+  let config_full = config_update(config_base, &cli_options, &args_remaining_src_apply, args_in_src);
 
   content_parts[1..].iter()
     /* process each part to input instance */
     .map(|(i, srcstr)| Inputs { i: *i, srcstr, config: &config_full })
     /* handle option - only - allow subset */
-    .filter(match_inputs_per_cli_option_only)
+    .filter(inputs_match)
     /* parse each input to output instance */
-    .map(parse_inputs_to_output)
+    .map(inputs_parse)
     /* print output text or poss. use file */
-    .for_each(apply_output)
+    .for_each(output_apply)
 }
 
-fn read_stdin() -> Vec<String> {
+fn stdin_read() -> Vec<String> {
 
   use io::Read;
   let (tx, rx) = mpsc::channel();
@@ -314,25 +314,25 @@ fn read_stdin() -> Vec<String> {
   }
 }
 
-fn get_cli_options() -> Vec<CLIOption> {
+fn cli_options_get() -> Vec<CLIOption> {
   Vec::from([
-    CLIOption::new("dest", "d", &["DIR"], &*format!("set the default output directory name (currently '{}') to DIR", DEST_DIR), &apply_cli_option_dest),
-    CLIOption::new("list", "l", &[], "print for each script in the source file its number and tag line content, skipping the save and run stages", &apply_cli_option_list),
-    CLIOption::new("only", "o", &["SUBSET"], "include only scripts the numbers of which appear in SUBSET, comma-separated and/or in dash-indicated ranges, e.g. -o 1,3-5", &apply_cli_option_only),
-    CLIOption::new("push", "p", &["LINE", "PATH"], "append to the source file LINE, auto-prefixed with a tag, followed by the content at PATH then exit", &apply_cli_option_push),
-    CLIOption::new("init", "i", &[], &*format!("create a template source file at the default source file path (currently '{}') then exit", SRC_PATH), &apply_cli_option_init),
+    CLIOption::new("dest", "d", &["DIR"], &*format!("set the default output directory name (currently '{}') to DIR", DEST_DIR), &cli_option_dest_apply),
+    CLIOption::new("list", "l", &[], "print for each script in the source file its number and tag line content, skipping the save and run stages", &cli_option_list_apply),
+    CLIOption::new("only", "o", &["SUBSET"], "include only scripts the numbers of which appear in SUBSET, comma-separated and/or in dash-indicated ranges, e.g. -o 1,3-5", &cli_option_only_apply),
+    CLIOption::new("push", "p", &["LINE", "PATH"], "append to the source file LINE, auto-prefixed with a tag, followed by the content at PATH then exit", &cli_option_push_apply),
+    CLIOption::new("init", "i", &[], &*format!("create a template source file at the default source file path (currently '{}') then exit", SRC_PATH), &cli_option_init_apply),
     CLIOption::new_help()
   ])
 }
 
-fn match_inputs_per_cli_option_only(inputs: &Inputs) -> bool {
+fn inputs_match(inputs: &Inputs) -> bool {
   !inputs.config.map.contains_key("only") || match inputs.config.map.get("only").unwrap() {
     ConfigMapVal::Ints(val_ints) => val_ints.contains(&(inputs.i)),
     _                            => false
   }
 }
 
-fn parse_inputs_to_output(inputs: Inputs) -> Option<Output> {
+fn inputs_parse(inputs: Inputs) -> Option<Output> {
 
   let Inputs { i, srcstr, config } = inputs;
   let Config { src: _, tag, dir: _, map } = config;
@@ -376,15 +376,15 @@ fn parse_inputs_to_output(inputs: Inputs) -> Option<Output> {
   Some(Output::File(OutputFile::new(data, code, i, config)))
 }
 
-fn apply_output(output: Option<Output>) {
+fn output_apply(output: Option<Output>) {
   match output {
     Some(Output::Text(s)) => { println!("{}", &s); },
-    Some(Output::File(s)) => { save_output(&s); exec_output(&s); },
+    Some(Output::File(s)) => { output_save(&s); output_exec(&s); },
     None                  => {}
   };
 }
 
-fn save_output(output: &OutputFile) {
+fn output_save(output: &OutputFile) {
 
   let OutputFile { data: _, code, path, init: _, i: _ } = output;
   let dir = &path.dir;
@@ -396,7 +396,7 @@ fn save_output(output: &OutputFile) {
   fs::write(&path, code).unwrap_or_else(|_| panic!("write script to '{}'", &path));
 }
 
-fn exec_output(output: &OutputFile) {
+fn output_exec(output: &OutputFile) {
 
   let OutputFile { data: _, code: _, path: _, init, i: _ } = output;
 
@@ -417,15 +417,15 @@ fn exec_output(output: &OutputFile) {
 
 /* - argument applicators */
 
-fn apply_cli_option_dest(_0: &Config, _1: &[CLIOption], strs: Vec<String>) -> ConfigMapVal {
+fn cli_option_dest_apply(_0: &Config, _1: &[CLIOption], strs: Vec<String>) -> ConfigMapVal {
   ConfigMapVal::Strs(strs)
 }
 
-fn apply_cli_option_list(_0: &Config, _1: &[CLIOption], _2: Vec<String>) -> ConfigMapVal {
+fn cli_option_list_apply(_0: &Config, _1: &[CLIOption], _2: Vec<String>) -> ConfigMapVal {
   ConfigMapVal::Bool
 }
 
-fn apply_cli_option_only(_0: &Config, _1: &[CLIOption], strs: Vec<String>) -> ConfigMapVal {
+fn cli_option_only_apply(_0: &Config, _1: &[CLIOption], strs: Vec<String>) -> ConfigMapVal {
   let val_ints: Vec<usize> = strs[0].trim().split(',')
     .flat_map(|val_str| {
       let vals: Vec<usize> = val_str.trim().split('-').map(|item| item.parse::<usize>().expect("parse subset for option 'only'")).collect();
@@ -435,14 +435,14 @@ fn apply_cli_option_only(_0: &Config, _1: &[CLIOption], strs: Vec<String>) -> Co
   ConfigMapVal::Ints(val_ints)
 }
 
-fn apply_cli_option_push(config: &Config, _0: &[CLIOption], strs: Vec<String>) -> ConfigMapVal {
-  push(config, strs);
+fn cli_option_push_apply(config: &Config, _0: &[CLIOption], strs: Vec<String>) -> ConfigMapVal {
+  script_push(config, strs);
   process::exit(0);
 }
 
-fn apply_cli_option_init(config: &Config, _0: &[CLIOption], _1: Vec<String>) -> ConfigMapVal {
+fn cli_option_init_apply(config: &Config, _0: &[CLIOption], _1: Vec<String>) -> ConfigMapVal {
 
-  let [form, line, data_items, data_chars, read] = get_doc_lines();
+  let [form, line, data_items, data_chars, read] = doc_lines_get();
   let src = &config.src;
 
   let content = format!("\
@@ -461,21 +461,21 @@ fn apply_cli_option_init(config: &Config, _0: &[CLIOption], _1: Vec<String>) -> 
   let sum_failure = format!("Not creating template source file at '{}'", src);
 
   /* exit early if source file exists */
-  if fs::metadata(src).is_ok() { error((&format!("{} (path exists)", sum_failure), None, None)) };
+  if fs::metadata(src).is_ok() { error_handle((&format!("{} (path exists)", sum_failure), None, None)) };
 
-  fs::write(src, content).unwrap_or_else(|err| error((&sum_failure, Some("write"), Some(err))));
+  fs::write(src, content).unwrap_or_else(|err| error_handle((&sum_failure, Some("write"), Some(err))));
 
   println!("Created template source file at '{}'", src);
   process::exit(0);
 }
 
-fn apply_args_remaining_cli(mut config: Config, args_remaining: Vec<String>) -> Config {
+fn args_remaining_cli_apply(mut config: Config, args_remaining: Vec<String>) -> Config {
   /* set final source filename (incl. output basename) per positional arg */
   config.src = if !args_remaining.is_empty() { String::from(&args_remaining[0]) } else { config.src };
   config
 }
 
-fn apply_args_remaining_src(config: Config, _: Vec<String>) -> Config {
+fn args_remaining_src_apply(config: Config, _: Vec<String>) -> Config {
   config
 }
 
@@ -486,7 +486,7 @@ mod args {
   /* - imports */
 
   use std::process;
-  use super::{ Config, ConfigMapVal, get_doc_lines };
+  use super::{ Config, ConfigMapVal, doc_lines_get };
 
   /* - data structures */
 
@@ -512,7 +512,7 @@ mod args {
     }
 
     pub fn new_help() -> CLIOption {
-      CLIOption::new("help", "h", &[], "show usage, flags available and notes then exit", &apply_cli_option_help)
+      CLIOption::new("help", "h", &[], "show usage, flags available and notes then exit", &cli_option_help_apply)
     }
   }
 
@@ -520,7 +520,7 @@ mod args {
 
   /* - argument applicator ('help') */
 
-  fn apply_cli_option_help(_: &Config, cli_options: &[CLIOption], _0: Vec<String>) -> ConfigMapVal {
+  fn cli_option_help_apply(_: &Config, cli_options: &[CLIOption], _0: Vec<String>) -> ConfigMapVal {
 
     /* set value substrings and max length */
     let val_strs = cli_options.iter()
@@ -551,7 +551,7 @@ mod args {
     let flags_text = format!("Flags:\n{}", flags_list);
 
     /* generate notes text */
-    let notes_body = get_doc_lines().map(|line| line_break_and_indent(&line, 1, 80, true)).join("\n\n");
+    let notes_body = doc_lines_get().map(|line| line_break_and_indent(&line, 1, 80, true)).join("\n\n");
     let notes_text = format!("Notes:\n{}", notes_body);
 
     println!("{}\n{}\n{}", usage_text, flags_text, notes_text);
@@ -586,7 +586,7 @@ mod args {
 
   /* - primary functions */
 
-  pub fn update_config(mut config: Config<'static>, cli_options: &[CLIOption], handle_remaining: &CLIArgHandler, args: Vec<String>) -> Config<'static> {
+  pub fn config_update(mut config: Config<'static>, cli_options: &[CLIOption], handle_remaining: &CLIArgHandler, args: Vec<String>) -> Config<'static> {
 
     let args_count: usize = args.len();
 
@@ -636,12 +636,12 @@ mod test {
     Config, ConfigMapVal,
     Inputs,
     Output, OutputFile, OutputFilePath, OutputFileInit, OutputFileInitCode,
-    parse_inputs_to_output
+    inputs_parse
   };
 
   /* - test cases */
 
-  /*   - function: parse_inputs_to_output */
+  /*   - function: inputs_parse */
 
   fn get_values_for_parse_inputs() -> (Config<'static>, usize, String, OutputFilePath, OutputFileInit) {
 
@@ -688,7 +688,7 @@ mod test {
     let data = Vec::from(["ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
     let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
-    let obtained = parse_inputs_to_output(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
+    let obtained = inputs_parse(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
 
     assert_eq!(expected, obtained);
   }
@@ -701,7 +701,7 @@ mod test {
     let data = Vec::from(["ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
     let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
-    let obtained = parse_inputs_to_output(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
+    let obtained = inputs_parse(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
 
     assert_eq!(expected, obtained);
   }
@@ -723,7 +723,7 @@ mod test {
     config_default.map.insert("dest".to_string(), ConfigMapVal::Strs(Vec::from([String::from("dest")])));
 
     let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
-    let obtained = parse_inputs_to_output(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
+    let obtained = inputs_parse(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
 
     assert_eq!(expected, obtained);
   }
@@ -737,7 +737,7 @@ mod test {
     config_default.map.insert("list".to_string(), ConfigMapVal::Bool);
 
     let expected = Option::Some(Output::Text(String::from("1: ext program --flag value")));
-    let obtained = parse_inputs_to_output(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
+    let obtained = inputs_parse(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
 
     assert_eq!(expected, obtained);
   }
@@ -758,7 +758,7 @@ mod test {
     match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
 
     let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
-    let obtained = parse_inputs_to_output(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
+    let obtained = inputs_parse(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
 
     assert_eq!(expected, obtained);
   }
@@ -779,7 +779,7 @@ mod test {
     match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
 
     let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
-    let obtained = parse_inputs_to_output(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
+    let obtained = inputs_parse(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
 
     assert_eq!(expected, obtained);
   }
@@ -800,7 +800,7 @@ mod test {
     match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
 
     let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
-    let obtained = parse_inputs_to_output(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
+    let obtained = inputs_parse(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
 
     assert_eq!(expected, obtained);
   }
@@ -821,7 +821,7 @@ mod test {
     match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
 
     let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
-    let obtained = parse_inputs_to_output(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
+    let obtained = inputs_parse(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
 
     assert_eq!(expected, obtained);
   }
@@ -838,7 +838,7 @@ mod test {
     let init = OutputFileInit::Code(OutputFileInitCode { prog, args });
 
     let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
-    let obtained = parse_inputs_to_output(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
+    let obtained = inputs_parse(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
 
     assert_eq!(expected, obtained);
   }
@@ -853,7 +853,7 @@ mod test {
     let init = OutputFileInit::Text(String::from("Not running file no. 1 (no values)"));
 
     let expected = Option::Some(Output::File(OutputFile { data, code, path, init, i }));
-    let obtained = parse_inputs_to_output(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
+    let obtained = inputs_parse(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
 
     assert_eq!(expected, obtained);
   }
@@ -865,7 +865,7 @@ mod test {
     let script_plus_tag_line_part = " ! ext program --flag value\n\n//code";
 
     let expected = Option::Some(Output::Text(String::from("Bypassing script no. 1 (! applied)")));
-    let obtained = parse_inputs_to_output(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
+    let obtained = inputs_parse(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
 
     assert_eq!(expected, obtained);
   }
@@ -877,7 +877,7 @@ mod test {
     let script_plus_tag_line_part = "\n\n//code";
 
     let expected = Option::Some(Output::Text(String::from("No tag data found for script no. 1")));
-    let obtained = parse_inputs_to_output(Inputs { i, srcstr: script_plus_tag_line_part, config: &config_default });
+    let obtained = inputs_parse(Inputs { i, srcstr: script_plus_tag_line_part, config: &config_default });
 
     assert_eq!(expected, obtained);
   }

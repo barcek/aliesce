@@ -200,11 +200,11 @@ struct OutputFileInitCode {
 
 fn doc_lines_get() -> [String; 5] {
 
-  let form = format!("The default source file path is '{}'. Each script in the source file requires a preceding tag line. A tag line begins with the tag head ('{}') and has an optional label with the tag tail ('{}'). The format is shown below.", SRC_PATH, TAG_LINE.tag_head, TAG_LINE.tag_tail);
-  let line = format!("{} <any label {}> <OUTPUT EXTENSION or FULL OUTPUT PATH: [[dirname(s)/]basename.]extension> <COMMAND incl. any arguments>", TAG_LINE.tag_head, TAG_LINE.tag_tail);
+  let form = format!("The default source file path is '{}'. Each script in the source file requires a preceding tag line. A tag line begins with the tag head ('{}') and has an optional label with the tag tail ('{}'). The basic format is as follows:", SRC_PATH, TAG_LINE.tag_head, TAG_LINE.tag_tail);
+  let line = format!("{}[ label {}] <OUTPUT EXTENSION / PATH: [[[.../]dirname/]stem.]ext> <COMMAND>", TAG_LINE.tag_head, TAG_LINE.tag_tail);
 
-  let data_items = format!("By default the script is saved with the OUTPUT EXTENSION or to the FULL OUTPUT PATH then the COMMAND is run with the path generated. The '{}' placeholder can be used in the COMMAND to denote path position and pass the whole to '{} {}'.", TAG_LINE.plc_path_all, TAG_LINE.cmd_prog, TAG_LINE.cmd_flag);
-  let data_chars = format!("The '{}' signal can be included before the OUTPUT EXTENSION or FULL OUTPUT PATH to avoid both the save and run stages, or before the COMMAND to save but avoid the run stage. The '{}' placeholder can be used in the FULL OUTPUT PATH to represent the default or overridden output directory name.", TAG_LINE.sig_stop, TAG_LINE.plc_path_dir);
+  let data_items = format!("Each script is saved with the default output directory ('{}'), source file stem and OUTPUT EXTENSION, or a PATH overriding stem and/or directory, then the COMMAND is run with the save path appended. The '{}' placeholder can be used in the COMMAND to override path position and have the COMMAND passed to '{} {}'.", DEST_DIR, TAG_LINE.plc_path_all, TAG_LINE.cmd_prog, TAG_LINE.cmd_flag);
+  let data_chars = format!("The '{}' signal can be used before the EXTENSION etc. to avoid the save and run stages, or before the COMMAND to save but not run. The '{}' placeholder can be used in a full PATH to denote the default or overridden output directory name.", TAG_LINE.sig_stop, TAG_LINE.plc_path_dir);
 
   let read = format!("One or more paths can be piped to 'aliesce' to append the content at each to the source file as a script, auto-preceded by a tag line with '{}', then exit.", TAG_LINE.sig_stop);
 

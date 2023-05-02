@@ -211,6 +211,32 @@ fn get_doc_lines() -> [String; 5] {
   [form, line, data_items, data_chars, read]
 }
 
+fn push(config: &Config, strs: Vec<String>) {
+
+  let script_filename = &strs[1];
+  let Config { src, tag, dir: _, map: _ } = config;
+
+  /* handle read */
+
+  let script = fs::read_to_string(script_filename)
+    .unwrap_or_else(|err| error((&format!("Not parsing script file '{}'", script_filename), Some("read"), Some(err))));
+  let tag_line = format!("{} {}", tag.tag_head, strs[0]);
+  let script_plus_tag_line = format!("\n{}\n\n{}", tag_line, script);
+
+  /* handle write */
+
+  use io::Write;
+  let sum_base = format!("tag line '{}' and content of script file '{}' to source file '{}'", tag_line, script_filename, src);
+  let sum_failure = format!("Not appending {}", sum_base);
+  let sum_success = format!("Appended {}", sum_base);
+
+  let mut file = fs::OpenOptions::new().append(true).open(src)
+    .unwrap_or_else(|err| error((&sum_failure, Some("open"), Some(err))));
+  file.write_all(&script_plus_tag_line.into_bytes())
+    .unwrap_or_else(|err| error((&sum_failure, Some("write"), Some(err))));
+  println!("{}", sum_success);
+}
+
 fn error(strs: (&String, Option<&str>, Option<io::Error>)) -> ! {
   match strs {
     (sum, Some(act), Some(err)) => eprintln!("{} ({} error: '{}')", sum, act, err),
@@ -224,25 +250,14 @@ fn error(strs: (&String, Option<&str>, Option<io::Error>)) -> ! {
 
 fn main() {
 
-  /* get any paths read from stdin */
-  let paths_stdin = read_stdin();
-  /* get any arguments passed on CLI */
+  /* set config per defaults, CLI options and args on CLI */
+  let cli_options = get_cli_options();
   let args_on_cli = env::args().skip(1).collect::<Vec<String>>();
-
-  let cli_options = Vec::from([
-    CLIOption::new("dest", "d", &["DIR"], &*format!("set the default output directory name (currently '{}') to DIR", DEST_DIR), &apply_cli_option_dest),
-    CLIOption::new("list", "l", &[], "print for each script in the source file its number and tag line content, skipping the save and run stages", &apply_cli_option_list),
-    CLIOption::new("only", "o", &["SUBSET"], "include only scripts the numbers of which appear in SUBSET, comma-separated and/or in dash-indicated ranges, e.g. -o 1,3-5", &apply_cli_option_only),
-    CLIOption::new("push", "p", &["LINE", "PATH"], "append to the source file LINE, auto-prefixed with a tag, followed by the content at PATH then exit", &apply_cli_option_push),
-    CLIOption::new("init", "i", &[], &*format!("create a template source file at the default source file path (currently '{}') then exit", SRC_PATH), &apply_cli_option_init),
-    CLIOption::new_help()
-  ]);
-
-  /* set config per defaults and args on CLI */
   let config_init = Config { src: String::from(SRC_PATH), tag: TAG_LINE, dir: DEST_DIR, map: HashMap::new() };
   let config_base = update_config(config_init, &cli_options, &apply_args_remaining_cli, args_on_cli);
 
-  /* handle pushes for paths read from stdin */
+  /* handle any pushes to script file for paths via stdin */
+  let paths_stdin = read_stdin();
   if !paths_stdin.is_empty() {
     for path in paths_stdin {
       push(&config_base, Vec::from([TAG_LINE.sig_stop.to_string(), path]));
@@ -269,15 +284,14 @@ fn main() {
   let args_in_src = content_parts[0].1.split_whitespace().map(|part| part.trim().to_string()).filter(|part| !part.is_empty()).collect::<Vec<String>>();
   let config_full = update_config(config_base, &cli_options, &apply_args_remaining_src, args_in_src);
 
-  /* process each part to inputs then output */
   content_parts[1..].iter()
-    /* include each part in inputs variant */
+    /* process each part to input instance */
     .map(|(i, srcstr)| Inputs { i: *i, srcstr, config: &config_full })
     /* handle option - only - allow subset */
     .filter(match_inputs_per_cli_option_only)
-    /* parse part inputs to output variant */
+    /* parse each input to output instance */
     .map(parse_inputs_to_output)
-    /* print or save and run each variant */
+    /* print output text or poss. use file */
     .for_each(apply_output)
 }
 
@@ -300,30 +314,15 @@ fn read_stdin() -> Vec<String> {
   }
 }
 
-fn push(config: &Config, strs: Vec<String>) {
-
-  let script_filename = &strs[1];
-  let Config { src, tag, dir: _, map: _ } = config;
-
-  /* handle read */
-
-  let script = fs::read_to_string(script_filename)
-    .unwrap_or_else(|err| error((&format!("Not parsing script file '{}'", script_filename), Some("read"), Some(err))));
-  let tag_line = format!("{} {}", tag.tag_head, strs[0]);
-  let script_plus_tag_line = format!("\n{}\n\n{}", tag_line, script);
-
-  /* handle write */
-
-  use io::Write;
-  let sum_base = format!("tag line '{}' and content of script file '{}' to source file '{}'", tag_line, script_filename, src);
-  let sum_failure = format!("Not appending {}", sum_base);
-  let sum_success = format!("Appended {}", sum_base);
-
-  let mut file = fs::OpenOptions::new().append(true).open(src)
-    .unwrap_or_else(|err| error((&sum_failure, Some("open"), Some(err))));
-  file.write_all(&script_plus_tag_line.into_bytes())
-    .unwrap_or_else(|err| error((&sum_failure, Some("write"), Some(err))));
-  println!("{}", sum_success);
+fn get_cli_options() -> Vec<CLIOption> {
+  Vec::from([
+    CLIOption::new("dest", "d", &["DIR"], &*format!("set the default output directory name (currently '{}') to DIR", DEST_DIR), &apply_cli_option_dest),
+    CLIOption::new("list", "l", &[], "print for each script in the source file its number and tag line content, skipping the save and run stages", &apply_cli_option_list),
+    CLIOption::new("only", "o", &["SUBSET"], "include only scripts the numbers of which appear in SUBSET, comma-separated and/or in dash-indicated ranges, e.g. -o 1,3-5", &apply_cli_option_only),
+    CLIOption::new("push", "p", &["LINE", "PATH"], "append to the source file LINE, auto-prefixed with a tag, followed by the content at PATH then exit", &apply_cli_option_push),
+    CLIOption::new("init", "i", &[], &*format!("create a template source file at the default source file path (currently '{}') then exit", SRC_PATH), &apply_cli_option_init),
+    CLIOption::new_help()
+  ])
 }
 
 fn match_inputs_per_cli_option_only(inputs: &Inputs) -> bool {

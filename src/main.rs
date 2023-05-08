@@ -82,16 +82,23 @@ pub enum ConfigRecsVal {
 }
 
 impl Config<'_> {
+  /* handle any positional argument - alternative source file path */
   fn get_path_src(&self) -> String {
-    if !self.receipts.contains_key("path_src") {
-      String::from(self.defaults.path_src)
-    }
-    else {
-      match self.receipts.get("path_src").unwrap() {
-        ConfigRecsVal::Strs(val_strs) => val_strs.get(0).unwrap().to_owned(),
-        _                             => String::new()
+    if self.receipts.contains_key("path_src") {
+      if let ConfigRecsVal::Strs(val_strs) = self.receipts.get("path_src").unwrap() {
+        return val_strs.get(0).unwrap().to_string();
       }
     }
+    String::from(self.defaults.path_src)
+  }
+  /* handle option - dest - alternative output directory name */
+  fn get_path_dir(&self) -> String {
+    if self.receipts.contains_key("dest") {
+      if let ConfigRecsVal::Strs(val_strs) = self.receipts.get("dest").unwrap() {
+        return val_strs.get(0).unwrap().to_string();
+      }
+    }
+    String::from(self.defaults.path_dir)
   }
 }
 
@@ -121,35 +128,29 @@ struct OutputFile {
 impl OutputFile {
   fn new(data: Vec<String>, code: String, i: usize, config: &Config) -> OutputFile {
 
-    let Config { defaults, receipts } = config;
+    let Config { defaults, receipts: _ } = config;
 
     /* set output path parts */
 
     /* get output path parts - break first data item on '/' */
     let mut parts_path = data.get(0).unwrap().split('/').collect::<Vec<&str>>();
-
-    /* handle option - dest - update output directory name */
-    let dirname = if !receipts.contains_key("dest") { defaults.path_dir } else {
-      match receipts.get("dest").unwrap() {
-        ConfigRecsVal::Strs(val_strs) => val_strs[0].as_str(),
-        _                            => defaults.path_dir
-      }
-    };
+    let path_dir = config.get_path_dir();
 
     /* handle output directory identified by directory placeholder */
-    if defaults.plc_path_dir == parts_path[0] { parts_path[0] = dirname };
+    if defaults.plc_path_dir == parts_path[0] { parts_path[0] = path_dir.as_str() };
+
     /* get output filename parts - separate last output path part and break on '.' */
     let parts_filename = parts_path.split_off(parts_path.len() - 1).last().unwrap().split('.').collect::<Vec<&str>>();
     let p_f_len = parts_filename.len();
 
-    /* set as dir either remaining output path parts recombined or directory name */
-    let dir = if !parts_path.is_empty() { parts_path.join("/") } else { dirname.to_string() };
-    /* set as basename either all but last output filename part or src basename */
-    let basename = if p_f_len > 1 { parts_filename[..(p_f_len - 1)].join(".") } else { config.get_path_src().split('.').nth(0).unwrap().to_string() };
-    /* set as ext last output filename part */
+    /* set as dir either remaining output path parts recombined or directory name,
+           as stem either all but last output filename part or src stem, and
+           as ext last output filename part */
+    let dir = if !parts_path.is_empty() { parts_path.join("/") } else { path_dir.to_string() };
+    let stem = if p_f_len > 1 { parts_filename[..(p_f_len - 1)].join(".") } else { config.get_path_src().split('.').nth(0).unwrap().to_string() };
     let ext = parts_filename.iter().last().unwrap().to_string();
 
-    let path = OutputFilePath{ dir, basename, ext };
+    let path = OutputFilePath{ dir, stem, ext };
 
     /* set output init parts */
 
@@ -166,9 +167,9 @@ impl OutputFile {
     /* note presence of output path placeholder, as indicator of composite command */
     let has_placeholder = data.iter().skip(1).any(|item| defaults.plc_path_all == item);
 
-    /* set as prog either tag line second item or default */
+    /* set as prog either tag line second item or default, and
+           as args either Vec containing remaining items plus combined path or default flag plus remaining items joined */
     let prog = if has_placeholder { String::from(defaults.cmd_prog) } else { data.get(1).unwrap().to_owned() };
-    /* set as args either Vec containing remaining items plus combined path or default flag plus remaining items joined */
     let mut args = Vec::from([]);
     if has_placeholder {
       args.push(defaults.cmd_flag.to_owned());
@@ -188,13 +189,13 @@ impl OutputFile {
 #[derive(Debug, PartialEq)]
 struct OutputFilePath {
   dir: String,
-  basename: String,
+  stem: String,
   ext: String
 }
 
 impl OutputFilePath {
   fn get(&self) -> String {
-    format!("{}/{}.{}", &self.dir, &self.basename, &self.ext)
+    format!("{}/{}.{}", &self.dir, &self.stem, &self.ext)
   }
 }
 
@@ -484,7 +485,7 @@ fn cli_option_init_apply(config: &Config, _0: &[CLIOption], _1: Vec<String>) -> 
 }
 
 fn args_remaining_cli_apply(mut config: Config, args_remaining: Vec<String>) -> Config {
-  /* set final source filename (incl. output basename) per positional arg */
+  /* set final source filename (incl. output stem) per positional arg */
   let arg = if !args_remaining.is_empty() { args_remaining.get(0).unwrap().to_owned() } else { String::from(config.defaults.path_src) };
   let val = ConfigRecsVal::Strs(Vec::from([arg]));
   config.receipts.insert(String::from("path_src"), val);
@@ -662,7 +663,7 @@ mod test {
 
     let src_default_str = "src.txt";
     let dir_default_str = "scripts";
-    let src_basename_default_str = src_default_str.split(".").nth(0).unwrap();
+    let src_stem_default_str = src_default_str.split(".").nth(0).unwrap();
 
     let defaults_default = ConfigDefs { path_src: src_default_str, path_dir: dir_default_str, tag_head: "###", tag_tail: "#", sig_stop: "!", plc_path_dir: ">", plc_path_all: "><", cmd_prog: "bash", cmd_flag: "-c" };
     let receipts_default = HashMap::new();
@@ -678,7 +679,7 @@ mod test {
 
     let output_path = OutputFilePath {
       dir: String::from(dir_default_str),
-      basename: String::from(src_basename_default_str),
+      stem: String::from(src_stem_default_str),
       ext
     };
 
@@ -727,9 +728,9 @@ mod test {
     let data = Vec::from(["ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
     let dir = String::from("dest");
-    let basename = String::from(config_default.defaults.path_src.split(".").nth(0).unwrap());
+    let stem = String::from(config_default.defaults.path_src.split(".").nth(0).unwrap());
     let ext = String::from("ext");
-    let path = OutputFilePath { dir, basename, ext };
+    let path = OutputFilePath { dir, stem, ext };
 
     match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
     config_default.receipts.insert("dest".to_string(), ConfigRecsVal::Strs(Vec::from([String::from("dest")])));
@@ -755,7 +756,7 @@ mod test {
   }
 
   #[test]
-  fn parse_inputs_returns_for_tag_data_full_incl_singlepart_output_basename_some_output_file() {
+  fn parse_inputs_returns_for_tag_data_full_incl_singlepart_output_stem_some_output_file() {
 
     let (config_default, i, code, _, mut init) = get_values_for_parse_inputs();
     let script_plus_tag_line_part = " script.ext program --flag value\n\n//code";
@@ -763,9 +764,9 @@ mod test {
     let data = Vec::from(["script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
     let dir = String::from(config_default.defaults.path_dir);
-    let basename = String::from("script");
+    let stem = String::from("script");
     let ext = String::from("ext");
-    let path = OutputFilePath { dir, basename, ext };
+    let path = OutputFilePath { dir, stem, ext };
 
     match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
 
@@ -776,7 +777,7 @@ mod test {
   }
 
   #[test]
-  fn parse_inputs_returns_for_tag_data_full_incl_multipart_output_basename_some_output_file() {
+  fn parse_inputs_returns_for_tag_data_full_incl_multipart_output_stem_some_output_file() {
 
     let (config_default, i, code, _, mut init) = get_values_for_parse_inputs();
     let script_plus_tag_line_part = " script.suffix1.suffix2.ext program --flag value\n\n//code";
@@ -784,9 +785,9 @@ mod test {
     let data = Vec::from(["script.suffix1.suffix2.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
     let dir = String::from(config_default.defaults.path_dir);
-    let basename = String::from("script.suffix1.suffix2");
+    let stem = String::from("script.suffix1.suffix2");
     let ext = String::from("ext");
-    let path = OutputFilePath { dir, basename, ext };
+    let path = OutputFilePath { dir, stem, ext };
 
     match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
 
@@ -805,9 +806,9 @@ mod test {
     let data = Vec::from(["dir/script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
     let dir = String::from("dir");
-    let basename = String::from("script");
+    let stem = String::from("script");
     let ext = String::from("ext");
-    let path = OutputFilePath { dir, basename, ext };
+    let path = OutputFilePath { dir, stem, ext };
 
     match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
 
@@ -826,9 +827,9 @@ mod test {
     let data = Vec::from([">/script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
     let dir = String::from("scripts");
-    let basename = String::from("script");
+    let stem = String::from("script");
     let ext = String::from("ext");
-    let path = OutputFilePath { dir, basename, ext };
+    let path = OutputFilePath { dir, stem, ext };
 
     match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
 

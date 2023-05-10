@@ -33,7 +33,7 @@ Create a file for your scripts. Give it any name, and any extension or none. Use
 
 Add the scripts to the file.
 
-Immediately above each script, insert a tag line starting by default `###`. Include in the tag line the following elements:
+Immediately above each script, insert a tag line starting by default with `###`. Include in the tag line the following elements:
 
 - the file extension for that language, or the full output filename including extension, or the full output path including directory and extension
 - the command to be run, if any, e.g. the program to be used to run the file and any arguments to pass to that program - the path to the file is added as the final argument by default
@@ -66,7 +66,7 @@ The script files are saved and run in order of appearance in the source file.
 
 #### Specifying paths
 
-The basename of the output file will be the basename of the source file, i.e. 'src' by default. The file is saved by default to a folder in the current directory named `scripts`, which is created if not present. This default directory can be overridden via the command line (see [Options](#options) below).
+The stem of the output filename will be the stem of the source filename, i.e. 'src' by default. The file is saved by default to a folder in the current directory named `scripts`, which is created if not present. This default directory can be overridden via the command line (see [Options](#options) below).
 
 For an output file named 'script.exs', the following would be used:
 
@@ -96,13 +96,13 @@ For a command in which the path to the file is not the last argument, e.g. when 
 
 #### Avoiding stages
 
-To avoid a script being saved and run, simply include the `!` character as a tag line element, before the extension or full output filename or path:
+To avoid a script being saved and run, simply include the `!` signal as a tag line element, before the extension or full output filename or path:
 
 ```
 ### ! script.exs elixir -r setup
 ```
 
-To save the script but avoid the run stage, include the `!` character as an element after the extension or full output filename or path but before the command to run the code:
+To save the script but avoid the run stage, include the `!` signal as an element after the extension or full output filename or path but before the command to run the code:
 
 ```
 ### script.exs ! elixir -r setup
@@ -139,17 +139,21 @@ Arguments provided in-file are simply placed above the initial tag line, arrange
 
 Arguments passed directly on the command line are processed first, followed by those in the file, with the latter overriding the former in the event that an option is selected using both approaches.
 
+This is similar to the use of the source file directly via hashbang, described in [Getting started](#getting-started) below.
+
 ## Piping
 
-One or more paths can be piped to `aliesce` to append the content at each to the source file as a script, auto-preceded by a tag line including the `!` character, then exit.
+One or more paths can be piped to `aliesce` to append the content at each to the source file as a script, auto-preceded by a tag line including the `!` signal, then exit.
 
 ## Getting started
 
-The `dir`, `src` and `tag` defaults are defined close to the top of the source file, i.e. 'src/main.rs', should you prefer to modify any pre-compilation.
+The default path, tag, signal, placeholder and command values are defined close to the top of the source file, i.e. 'src/main.rs', should you prefer to modify any pre-compilation.
 
 With Rust and Cargo installed, at the root of the aliesce directory run `cargo build --release` to compile. The binary is created in the 'target/release' directory.
 
-The binary can be run with the command `./aliesce` while in the same directory, and from elsewhere using the pattern `path/to/aliesce`. It can be run from any directory with `aliesce` by placing it in the '/bin' or '/usr/bin' directory.
+The binary can be run with the command `./aliesce` while in the same directory, and from elsewhere using the pattern `path/to/aliesce`. It can be run from any directory with `aliesce` by placing it in a directory listed in `$PATH`, presumably '/bin' or '/usr/bin'.
+
+A source file can be used directly by adding to the top of the file a hashbang with the path to the aliesce binary, e.g. `#!/usr/bin/aliesce`. If flags are to be passed (see [Options](#options) above), it may be possible to use the `env` binary with its split string option, e.g. `#!/bin/env -S aliesce <flag>[ ...]`. This inclusion of flags is similar to the approach described in [Provision in-file](#provision-in-file) above.
 
 ## Making changes
 
@@ -159,7 +163,7 @@ Running the tests after making changes and adding tests to cover new behaviour i
 
 The tests can be run with the following command:
 
-```shell
+```
 cargo test
 ```
 

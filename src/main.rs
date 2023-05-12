@@ -165,7 +165,7 @@ impl OutputFile {
     }
 
     /* note presence of output path placeholder, as indicator of composite command */
-    let has_placeholder = data.iter().skip(1).any(|item| defaults.plc_path_all == item);
+    let has_placeholder = data.iter().skip(1).any(|item| item.contains(defaults.plc_path_all));
 
     /* set as prog either tag line second item or default, and
            as args either Vec containing remaining items plus combined path or default flag plus remaining items joined */
@@ -173,7 +173,7 @@ impl OutputFile {
     let mut args = Vec::from([]);
     if has_placeholder {
       args.push(defaults.cmd_flag.to_owned());
-      args.push(data.iter().skip(1).map(|item| if defaults.plc_path_all == item { path.get() } else { item.to_owned() }).collect::<Vec<String>>().join(" "));
+      args.push(data.iter().skip(1).map(|item| if item.contains(defaults.plc_path_all) { item.replace(defaults.plc_path_all, &path.get()) } else { item.to_owned() }).collect::<Vec<String>>().join(" "));
     }
     else {
       args.append(&mut data.iter().skip(2).map(|arg| arg.to_owned()).collect::<Vec<String>>());

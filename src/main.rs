@@ -112,8 +112,14 @@ struct Inputs<'a> {
 
 #[derive(Debug, PartialEq)]
 enum Output {
-  Text(String),
+  Text(OutputText),
   File(OutputFile)
+}
+
+#[derive(Debug, PartialEq)]
+enum OutputText {
+  Stdout(String),
+  Stderr(String)
 }
 
 #[derive(Debug, PartialEq)]
@@ -156,11 +162,11 @@ impl OutputFile {
 
     /* handle file run precluded */
     if data.len() == 1 {
-      let init = OutputFileInit::Text(format!("Not running file no. {} (no values)", i));
+      let init = OutputFileInit::Text(OutputText::Stderr(format!("Not running file no. {} (no values)", i)));
       return OutputFile { data, code, path, init, i };
     }
     if data.get(1).unwrap() == defaults.sig_stop {
-      let init = OutputFileInit::Text(format!("Not running file no. {} ({} applied)", i, defaults.sig_stop));
+      let init = OutputFileInit::Text(OutputText::Stderr(format!("Not running file no. {} ({} applied)", i, defaults.sig_stop)));
       return OutputFile { data, code, path, init, i };
     }
 
@@ -218,7 +224,7 @@ impl OutputFilePath {
 
 #[derive(Debug, PartialEq)]
 enum OutputFileInit {
-  Text(String),
+  Text(OutputText),
   Code(OutputFileInitCode)
 }
 
@@ -395,7 +401,7 @@ fn inputs_parse(inputs: Inputs) -> Output {
   if receipts.contains_key("list") {
     let join = if !tag_line_label.is_empty() { [tag_line_label, ":"].concat() } else { "".to_string() };
     let text = format!("{}:{} {}", i, join, tag_line_data);
-    return Output::Text(text);
+    return Output::Text(OutputText::Stdout(text));
   };
 
   let code = lines.skip(1).collect::<Vec<&str>>().join("\n");
@@ -409,11 +415,11 @@ fn inputs_parse(inputs: Inputs) -> Output {
   /* handle data absent or bypass */
   if data.is_empty() {
     let text = format!("No tag data found for script no. {}", i);
-    return Output::Text(text);
+    return Output::Text(OutputText::Stderr(text));
   }
   if data.get(0).unwrap() == defaults.sig_stop {
     let text = format!("Bypassing script no. {} ({} applied)", i, defaults.sig_stop);
-    return Output::Text(text);
+    return Output::Text(OutputText::Stderr(text));
   }
 
   Output::File(OutputFile::new(data, code, i, config))
@@ -421,7 +427,12 @@ fn inputs_parse(inputs: Inputs) -> Output {
 
 fn output_apply(output: &Output, context: &HashMap<usize, String>) {
   match output {
-    Output::Text(s) => { println!("{}", &s); },
+    Output::Text(e) => {
+      match e {
+        OutputText::Stdout(s) => {  println!("{}", &s); },
+        OutputText::Stderr(s) => { eprintln!("{}", &s); }
+      }
+    },
     Output::File(s) => { output_save(&s); output_exec(&s, &context); },
   };
 }
@@ -445,8 +456,12 @@ fn output_exec(output: &OutputFile, context: &HashMap<usize, String>) {
   match init {
 
     /* print reason file run precluded */
-    OutputFileInit::Text(s) => println!("{}", s),
-
+    OutputFileInit::Text(e) => {
+      match e {
+        OutputText::Stdout(s) => {  println!("{}", &s); },
+        OutputText::Stderr(s) => { eprintln!("{}", &s); }
+      }
+    },
     /* run script from file */
     OutputFileInit::Code(c) => {
       let OutputFileInitCode { prog, args, plcs } = c;
@@ -690,7 +705,7 @@ mod test {
   use super::{
     Config, ConfigDefs, ConfigRecsVal,
     Inputs,
-    Output, OutputFile, OutputFilePath, OutputFileInit, OutputFileInitCode,
+    Output, OutputText, OutputFile, OutputFilePath, OutputFileInit, OutputFileInitCode,
     inputs_parse
   };
 
@@ -789,7 +804,7 @@ mod test {
 
     config_default.receipts.insert("list".to_string(), ConfigRecsVal::Bool);
 
-    let expected = Output::Text(String::from("1: ext program --flag value"));
+    let expected = Output::Text(OutputText::Stdout(String::from("1: ext program --flag value")));
     let obtained = inputs_parse(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
 
     assert_eq!(expected, obtained);
@@ -904,7 +919,7 @@ mod test {
     let script_plus_tag_line_part = " ext\n\n//code";
 
     let data = Vec::from(["ext".to_string()]);
-    let init = OutputFileInit::Text(String::from("Not running file no. 1 (no values)"));
+    let init = OutputFileInit::Text(OutputText::Stderr(String::from("Not running file no. 1 (no values)")));
 
     let expected = Output::File(OutputFile { data, code, path, init, i });
     let obtained = inputs_parse(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
@@ -918,7 +933,7 @@ mod test {
     let (config_default, i, _, _, _) = get_values_for_inputs_parse();
     let script_plus_tag_line_part = " ! ext program --flag value\n\n//code";
 
-    let expected = Output::Text(String::from("Bypassing script no. 1 (! applied)"));
+    let expected = Output::Text(OutputText::Stderr(String::from("Bypassing script no. 1 (! applied)")));
     let obtained = inputs_parse(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });
 
     assert_eq!(expected, obtained);
@@ -930,7 +945,7 @@ mod test {
     let (config_default, i, _, _, _) = get_values_for_inputs_parse();
     let script_plus_tag_line_part = "\n\n//code";
 
-    let expected = Output::Text(String::from("No tag data found for script no. 1"));
+    let expected = Output::Text(OutputText::Stderr(String::from("No tag data found for script no. 1")));
     let obtained = inputs_parse(Inputs { i, srcstr: script_plus_tag_line_part, config: &config_default });
 
     assert_eq!(expected, obtained);

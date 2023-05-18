@@ -94,6 +94,12 @@ For a command in which the path to the file is not the last argument, e.g. when 
 ### exs elixir -r setup >< | sort
 ```
 
+The output path of a different script can be selected by using its number in the placeholder. For the output path of script no. 1, rather than the fixed 'setup':
+
+```
+### exs elixir -r >1< >< | sort
+```
+
 #### Avoiding stages
 
 To avoid a script being saved and run, simply include the `!` signal as a tag line element, before the extension or full output filename or path:

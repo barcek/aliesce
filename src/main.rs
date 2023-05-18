@@ -45,7 +45,7 @@ static DEFAULTS: ConfigDefs = ConfigDefs {
   tag_tail:      "#",
   sig_stop:      "!",
   plc_path_dir:  ">",
-  plc_path_all:  "><",
+  plc_path_all:  ">{}<",    /* '{}' is optional script no. position */
   cmd_prog:      "bash",
   cmd_flag:      "-c"
 };
@@ -164,23 +164,40 @@ impl OutputFile {
       return OutputFile { data, code, path, init, i };
     }
 
-    /* note presence of output path placeholder, as indicator of composite command */
-    let has_placeholder = data.iter().skip(1).any(|item| item.contains(defaults.plc_path_all));
+    /* set as plcs any uses of output path placeholder and note presence as indicator of composite command */
+    let mut parts_placeholder = defaults.plc_path_all.split("{}");
+    let plc_head = parts_placeholder.next().unwrap();
+    let plc_tail = parts_placeholder.next().unwrap();
+    let plc_full = Vec::from([plc_head, plc_tail]).join("");
+
+    let plcs = data.iter().skip(1).map(|item| {
+      /* handle request for current script output path */
+      if item.contains(&plc_full) { return (0, plc_full.to_owned()) };
+      let head_i = if let Some(i) = item.find(plc_head) { i as i8 } else { -1 };
+      let tail_i = if let Some(i) = item.find(plc_tail) { i as i8 } else { -1 };
+      /* handle request for another script output path */
+      if -1 != head_i && -1 != tail_i && head_i < tail_i {
+         let s = item.chars().skip(head_i as usize).take((tail_i - head_i + 1) as usize).collect::<String>();
+         let i = s.chars().skip(plc_head.len()).take(s.len() - plc_full.len()).collect::<String>().parse::<i8>().unwrap();
+         return (i, s)
+      };
+      /* handle no request - value to be filtered out */
+      (-1, String::new())
+    }).filter(|item| -1 != item.0).collect::<Vec<(i8, String)>>();
+
+    let has_placeholder = !plcs.is_empty();
 
     /* set as prog either tag line second item or default, and
            as args either Vec containing remaining items plus combined path or default flag plus remaining items joined */
     let prog = if has_placeholder { String::from(defaults.cmd_prog) } else { data.get(1).unwrap().to_owned() };
-    let mut args = Vec::from([]);
-    if has_placeholder {
-      args.push(defaults.cmd_flag.to_owned());
-      args.push(data.iter().skip(1).map(|item| if item.contains(defaults.plc_path_all) { item.replace(defaults.plc_path_all, &path.get()) } else { item.to_owned() }).collect::<Vec<String>>().join(" "));
+    let args = if has_placeholder {
+      Vec::from([defaults.cmd_flag.to_owned(), data.iter().skip(1).map(|item| item.to_owned()).collect::<Vec<String>>().join(" ")])
     }
     else {
-      args.append(&mut data.iter().skip(2).map(|arg| arg.to_owned()).collect::<Vec<String>>());
-      args.push(path.get());
+      [data.iter().skip(2).map(|arg| arg.to_owned()).collect::<Vec<String>>(), Vec::from([path.get()])].concat()
     };
 
-    let init = OutputFileInit::Code(OutputFileInitCode { prog, args });
+    let init = OutputFileInit::Code(OutputFileInitCode { prog, args, plcs });
 
     OutputFile { data, code, path, init, i }
   }
@@ -208,7 +225,8 @@ enum OutputFileInit {
 #[derive(Debug, PartialEq)]
 struct OutputFileInitCode {
   prog: String,
-  args: Vec<String>
+  args: Vec<String>,
+  plcs: Vec<(i8, String)>
 }
 
 /* - utility functions, incl. DOC LINES */
@@ -299,15 +317,25 @@ fn main() {
   let args_in_src = content_parts[0].1.split_whitespace().map(|part| part.trim().to_string()).filter(|part| !part.is_empty()).collect::<Vec<String>>();
   let config_full = config_update(config_base, &cli_options, &args_remaining_src_apply, args_in_src);
 
-  content_parts[1..].iter()
+  let outputs = content_parts[1..].iter()
     /* process each part to input instance */
     .map(|(i, srcstr)| Inputs { i: *i, srcstr, config: &config_full })
     /* handle option - only - allow subset */
     .filter(inputs_match)
     /* parse each input to output instance */
     .map(inputs_parse)
+    .collect::<Vec<Output>>();
+
+  let context = outputs.iter()
+    /* get each output path with script no. */
+    .fold(HashMap::new(), |mut acc: HashMap<usize, String>, output| {
+      if let Output::File(file) = output { acc.insert(file.i, file.path.get()); }
+      acc
+    });
+
+  outputs.iter()
     /* print output text or poss. use file */
-    .for_each(output_apply)
+    .for_each(|output| { output_apply(output, &context) })
 }
 
 fn stdin_read() -> Vec<String> {
@@ -391,10 +419,10 @@ fn inputs_parse(inputs: Inputs) -> Output {
   Output::File(OutputFile::new(data, code, i, config))
 }
 
-fn output_apply(output: Output) {
+fn output_apply(output: &Output, context: &HashMap<usize, String>) {
   match output {
     Output::Text(s) => { println!("{}", &s); },
-    Output::File(s) => { output_save(&s); output_exec(&s); },
+    Output::File(s) => { output_save(&s); output_exec(&s, &context); },
   };
 }
 
@@ -410,9 +438,9 @@ fn output_save(output: &OutputFile) {
   fs::write(&path, code).unwrap_or_else(|_| panic!("write script to '{}'", &path));
 }
 
-fn output_exec(output: &OutputFile) {
+fn output_exec(output: &OutputFile, context: &HashMap<usize, String>) {
 
-  let OutputFile { data: _, code: _, path: _, init, i: _ } = output;
+  let OutputFile { data: _, code: _, path: _, init, i } = output;
 
   match init {
 
@@ -421,8 +449,20 @@ fn output_exec(output: &OutputFile) {
 
     /* run script from file */
     OutputFileInit::Code(c) => {
-      let OutputFileInitCode { prog, args } = c;
-      process::Command::new(&prog).args(args)
+      let OutputFileInitCode { prog, args, plcs } = c;
+
+      let args_full = if plcs.is_empty() {
+        args.to_owned()
+      } else {
+        let mut cmd = if 0 == plcs.len() { String::new() } else { args[1].to_owned() };
+        plcs.iter().for_each(|plc| {
+          let path = if 0 == plc.0 { context.get(i).unwrap() } else { context.get(&(plc.0 as usize)).unwrap() };
+          cmd = cmd.replace(plc.1.as_str(), path.as_str()).to_owned();
+        });
+        Vec::from([args[0].to_owned(), cmd])
+      };
+
+      process::Command::new(&prog).args(args_full)
         .spawn().unwrap_or_else(|_| panic!("run file with '{}'", prog))
         .wait_with_output().unwrap_or_else(|_| panic!("await output from '{}'", prog));
     }
@@ -664,7 +704,7 @@ mod test {
     let dir_default_str = "scripts";
     let src_stem_default_str = src_default_str.split(".").nth(0).unwrap();
 
-    let defaults_default = ConfigDefs { path_src: src_default_str, path_dir: dir_default_str, tag_head: "###", tag_tail: "#", sig_stop: "!", plc_path_dir: ">", plc_path_all: "><", cmd_prog: "bash", cmd_flag: "-c" };
+    let defaults_default = ConfigDefs { path_src: src_default_str, path_dir: dir_default_str, tag_head: "###", tag_tail: "#", sig_stop: "!", plc_path_dir: ">", plc_path_all: ">{}<", cmd_prog: "bash", cmd_flag: "-c" };
     let receipts_default = HashMap::new();
 
     let config_default = Config {
@@ -685,9 +725,10 @@ mod test {
     let index = 1;
     let prog  = String::from("program");
     let args  = Vec::from([String::from("--flag"), String::from("value"), output_path.get()]);
+    let plcs  = Vec::new();
     let code  = String::from("//code");
 
-    let output_init = OutputFileInit::Code(OutputFileInitCode { prog, args });
+    let output_init = OutputFileInit::Code(OutputFileInitCode { prog, args, plcs });
 
     (config_default, index, code, output_path, output_init)
   }
@@ -846,8 +887,9 @@ mod test {
     let data = Vec::from(["ext".to_string(), "program_1".to_string(), "--flag".to_string(), "value".to_string(), "><".to_string(), "|".to_string(), "program_2".to_string()]);
 
     let prog = String::from(config_default.defaults.cmd_prog);
-    let args = Vec::from([String::from(config_default.defaults.cmd_flag), String::from("program_1 --flag value scripts/src.ext | program_2")]);
-    let init = OutputFileInit::Code(OutputFileInitCode { prog, args });
+    let args = Vec::from([String::from(config_default.defaults.cmd_flag), String::from("program_1 --flag value >< | program_2")]);
+    let plcs = Vec::from([(0, String::from("><"))]);
+    let init = OutputFileInit::Code(OutputFileInitCode { prog, args, plcs });
 
     let expected = Output::File(OutputFile { data, code, path, init, i });
     let obtained = inputs_parse(Inputs {i, srcstr: script_plus_tag_line_part, config: &config_default });

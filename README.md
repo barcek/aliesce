@@ -135,6 +135,7 @@ The following can be passed to `aliesce` before any source file name:
 - `--only` / `-o`  `SUBSET`, to include only scripts the numbers of which appear in `SUBSET`, comma-separated and/or in dash-indicated ranges, e.g. `-o 1,3-5`
 - `--push` / `-p`  `LINE` `PATH`, to append to the source file `LINE`, auto-prefixed with a tag, followed by the content at `PATH` then exit
 - `--init` / `-i`, to create a template source file at the default source file path (currently 'src.txt') then exit
+- `--version` / `-v`, to show name and version number then exit
 - `--help` / `-h`, to show usage, flags available and notes then exit
 
 ### Provision in-file

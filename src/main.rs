@@ -242,10 +242,10 @@ fn doc_lines_get() -> [String; 5] {
   let form = format!("The default source file path is '{}'. Each script in the source file requires a preceding tag line. A tag line begins with the tag head ('{}') and has an optional label with the tag tail ('{}'). The basic format is as follows:", DEFAULTS.path_src, DEFAULTS.tag_head, DEFAULTS.tag_tail);
   let line = format!("{}[ label {}] <OUTPUT EXTENSION / PATH: [[[.../]dirname/]stem.]ext> <COMMAND>", DEFAULTS.tag_head, DEFAULTS.tag_tail);
 
-  let data_items = format!("Each script is saved with the default output directory ('{}'), source file stem and OUTPUT EXTENSION, or a PATH overriding stem and/or directory, then the COMMAND is run with the save path appended. The '{}' placeholder can be used in the COMMAND to override path position and have the COMMAND passed to '{} {}'.", DEFAULTS.path_dir, DEFAULTS.plc_path_all, DEFAULTS.cmd_prog, DEFAULTS.cmd_flag);
+  let data_items = format!("Each script is saved with the default output directory ('{}'), source file stem and OUTPUT EXTENSION, or a PATH overriding stem and/or directory, then the COMMAND is run with the save path appended. The '{}' placeholder can be used in the COMMAND to override path position and have the COMMAND passed to '{} {}'; where a script no. is included ('{}') the save path of that script is applied.", DEFAULTS.path_dir, DEFAULTS.plc_path_all.replace("{}", ""), DEFAULTS.cmd_prog, DEFAULTS.cmd_flag, DEFAULTS.plc_path_all.replace("{}", "n"));
   let data_chars = format!("The '{}' signal can be used before the EXTENSION etc. to avoid the save and run stages, or before the COMMAND to save but not run. The '{}' placeholder can be used in a full PATH to denote the default or overridden output directory name.", DEFAULTS.sig_stop, DEFAULTS.plc_path_dir);
 
-  let read = format!("One or more paths can be piped to 'aliesce' to append the content at each to the source file as a script, auto-preceded by a tag line with '{}', then exit.", DEFAULTS.sig_stop);
+  let read = format!("One or more file paths can be piped to aliesce to append the content at each to the source file as a script, auto-preceded by a tag line with '{}', then exit.", DEFAULTS.sig_stop);
 
   [form, line, data_items, data_chars, read]
 }

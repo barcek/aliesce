@@ -370,6 +370,7 @@ fn cli_options_get() -> Vec<CLIOption> {
     CLIOption::new("only", "o", &["SUBSET"], "include only scripts the numbers of which appear in SUBSET, comma-separated and/or in dash-indicated ranges, e.g. -o 1,3-5", &cli_option_only_apply),
     CLIOption::new("push", "p", &["LINE", "PATH"], "append to the source file LINE, auto-prefixed with a tag, followed by the content at PATH then exit", &cli_option_push_apply),
     CLIOption::new("init", "i", &[], &*format!("create a template source file at the default source file path (currently '{}') then exit", DEFAULTS.path_src), &cli_option_init_apply),
+    CLIOption::new_version(),
     CLIOption::new_help()
   ])
 }
@@ -581,7 +582,9 @@ mod args {
         call: Box::new(call)
       }
     }
-
+    pub fn new_version() -> CLIOption {
+      CLIOption::new("version", "v", &[], "show name and version number then exit", &cli_option_version_apply)
+    }
     pub fn new_help() -> CLIOption {
       CLIOption::new("help", "h", &[], "show usage, flags available and notes then exit", &cli_option_help_apply)
     }
@@ -591,31 +594,41 @@ mod args {
 
   /* - argument applicator ('help') */
 
-  fn cli_option_help_apply(_: &Config, cli_options: &[CLIOption], _0: Vec<String>) -> ConfigRecsVal {
+  fn cli_option_version_apply(_0: &Config, _1: &[CLIOption], _2: Vec<String>) -> ConfigRecsVal {
+    println!("{} v{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+    process::exit(0);
+  }
+
+  fn cli_option_help_apply(_0: &Config, cli_options: &[CLIOption], _1: Vec<String>) -> ConfigRecsVal {
 
     /* set value substrings and max length */
-    let val_strs = cli_options.iter()
+    let strs_strs = cli_options.iter()
       .map(|cli_option| cli_option.strs.join(" "))
       .collect::<Vec<String>>();
-    let val_strs_max = val_strs.iter()
+    let strs_strs_max = strs_strs.iter()
       .fold(0, |acc, val_str| if val_str.len() > acc { val_str.len() } else { acc });
+    let flag_strs = cli_options.iter()
+      .map(|cli_option| format!("-{}, --{}", cli_option.char, cli_option.word))
+      .collect::<Vec<String>>();
+    let flag_strs_max = flag_strs.iter()
+      .fold(0, |acc, arg_str| if arg_str.len() > acc { arg_str.len() } else { acc });
 
     /* generate usage text */
     let usage_opts_part = cli_options.iter()
       .filter(|cli_option| cli_option.word != "help") /* avoid duplication */
       .enumerate() /* yield also index (i) */
-      .map(|(i, cli_option)| format!("[--{}/-{}{}]", cli_option.word, cli_option.char, if val_strs.is_empty() { "".to_owned() } else { " ".to_owned() + &val_strs[i] }))
+      .map(|(i, cli_option)| format!("[--{}/-{}{}]", cli_option.word, cli_option.char, if strs_strs.is_empty() { "".to_owned() } else { " ".to_owned() + &strs_strs[i] }))
       .collect::<Vec<String>>()
       .join(" ");
-    let usage_opts_full = line_break_and_indent(&format!("[--help/-h / {} [source file path]]", usage_opts_part), 15, 80, false);
+    let usage_opts_full = line_break_and_indent(&format!("[--help/-h / {} [source]]", usage_opts_part), 15, 80, false);
     let usage_text = format!("Usage: aliesce {}", usage_opts_full);
 
     /* generate flags text */
     let flags_list = cli_options.iter()
       .enumerate() /* yield also index (i) */
       .map(|(i, cli_option)| {
-        let desc = line_break_and_indent(&cli_option.desc, val_strs_max + 15, 80, false);
-        format!(" -{}, --{}  {:w$}  {}", cli_option.char, cli_option.word, val_strs[i], desc, w = val_strs_max)
+        let desc = line_break_and_indent(&cli_option.desc, flag_strs_max + strs_strs_max + 2, 80, false);
+        format!(" {}  {:w$}  {}", flag_strs[i], strs_strs[i], desc, w = flag_strs_max - cli_option.word.len())
       })
       .collect::<Vec<String>>()
       .join("\n");

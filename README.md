@@ -52,7 +52,7 @@ A template source file can be created and scripts written in other files appende
 
 ### Running aliesce
 
-If aliesce is compiled and ready to go (see [Getting started](#getting-started) below), run the `aliesce` command, adding the source file name if not the default.
+If aliesce is compiled and ready to go (see [Getting started](#getting-started) below), run the `aliesce` command, adding the source file path if not the default.
 
 For example, for a source file named only 'src':
 
@@ -128,13 +128,13 @@ Spacing between tag head and tail is retained for list entries (see [Options](#o
 
 ## Options
 
-The following can be passed to `aliesce` before any source file name:
+The following can be passed to `aliesce` before any source file path:
 
-- `--dest` / `-d`  `DIR`, to set the default output directory name (currently 'scripts') to `DIR`
-- `--list` / `-l`, to print for each script in the source file its number and tag line content, skipping the save and run stages
-- `--only` / `-o`  `SUBSET`, to include only scripts the numbers of which appear in `SUBSET`, comma-separated and/or in dash-indicated ranges, e.g. `-o 1,3-5`
-- `--push` / `-p`  `LINE` `PATH`, to append to the source file `LINE`, auto-prefixed with a tag, followed by the content at `PATH` then exit
-- `--init` / `-i`, to create a template source file at the default source file path (currently 'src.txt') then exit
+- `--dest` / `-d`  `DIRNAME`, to set the default output dirname ('scripts') to `DIRNAME`
+- `--list` / `-l`, to print for each script in the source ('src.txt') its number and tag line content, without saving or running
+- `--only` / `-o`  `SUBSET`, to include only the scripts the numbers of which appear in `SUBSET`, comma-separated and/or as ranges, e.g. `-o 1,3-5`
+- `--push` / `-p`  `LINE` `PATH`, to append to the source ('src.txt') `LINE`, auto-prefixed by the tag head, followed by the content at `PATH` then exit
+- `--init` / `-i`, to add a source at the default path ('src.txt') then exit
 - `--version` / `-v`, to show name and version number then exit
 - `--help` / `-h`, to show usage, flags available and notes then exit
 

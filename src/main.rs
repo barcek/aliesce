@@ -602,7 +602,7 @@ mod args {
     let usage_opts_part = cli_options.iter()
       .filter(|cli_option| cli_option.word != "help") /* avoid duplication */
       .enumerate() /* yield also index (i) */
-      .map(|(i, cli_option)| format!("[--{}/-{}{}]", cli_option.word, cli_option.char, if strs_strs.is_empty() { "".to_owned() } else { " ".to_owned() + &strs_strs[i] }))
+      .map(|(i, cli_option)| format!("[--{}/-{}{}]", cli_option.word, cli_option.char, if strs_strs[i].is_empty() { "".to_owned() } else { " ".to_owned() + &strs_strs[i] }))
       .collect::<Vec<String>>()
       .join(" ");
     let usage_opts_full = line_break_and_indent(&format!("[--help/-h / {} [source]]", usage_opts_part), 15, 80, false);

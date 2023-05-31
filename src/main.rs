@@ -280,14 +280,7 @@ fn main() {
   let args_on_cli = env::args().skip(1).collect::<Vec<String>>();
   let config_base = config_update(config_init, &cli_options, &args_remaining_cli_apply, args_on_cli);
 
-  /* handle any pushes to script file for paths via stdin */
-  let paths_stdin = stdin_read();
-  if !paths_stdin.is_empty() {
-    for path in paths_stdin {
-      script_push(&config_base, Vec::from([config_base.defaults.get("sig_stop").unwrap().to_string(), path]));
-    }
-    process::exit(0);
-  };
+  if_paths_on_stdin_push_then_exit(&config_base);
 
   /* load script file content or exit early */
   let content_whole = fs::read_to_string(&config_base.get_path_src())
@@ -329,25 +322,6 @@ fn main() {
     .for_each(|output| { output_apply(output, &context) })
 }
 
-fn stdin_read() -> Vec<String> {
-
-  use io::Read;
-  let (tx, rx) = mpsc::channel();
-
-  thread::spawn(move || {
-    let mut stdin = io::stdin();
-    let mut bfr = String::new();
-    stdin.read_to_string(&mut bfr).unwrap();
-    tx.send(bfr).unwrap();
-  });
-  thread::sleep(Duration::from_millis(25));
-
-  match rx.try_recv() {
-    Ok(recvd) => recvd.split_whitespace().map(|str| str.to_string()).filter(|str| !str.is_empty()).collect::<Vec<String>>(),
-    Err(_)    => Vec::new()
-  }
-}
-
 fn cli_options_get(config: &Config) -> Vec<CLIOption> {
   Vec::from([
     CLIOption::new("dest", "d", &["DIRNAME"], &*format!("set the default output dirname ('{}') to DIRNAME", config.defaults.get("path_dir").unwrap()), &cli_option_dest_apply),
@@ -358,6 +332,35 @@ fn cli_options_get(config: &Config) -> Vec<CLIOption> {
     CLIOption::new_version(),
     CLIOption::new_help()
   ])
+}
+
+fn if_paths_on_stdin_push_then_exit(config: &Config) {
+
+  use io::Read;
+  let (tx, rx) = mpsc::channel();
+
+  /* spawn thread for blocking read and send string */
+  thread::spawn(move || {
+    let mut stdin = io::stdin();
+    let mut bfr = String::new();
+    stdin.read_to_string(&mut bfr).unwrap();
+    tx.send(bfr).unwrap();
+  });
+  thread::sleep(Duration::from_millis(25));
+
+  /* process lines in string received to paths */
+  let paths = match rx.try_recv() {
+    Ok(recvd) => recvd.split_whitespace().map(|str| str.to_string()).filter(|str| !str.is_empty()).collect::<Vec<String>>(),
+    Err(_)    => Vec::new()
+  };
+
+  /* handle script pushes for any paths */
+  if !paths.is_empty() {
+    for path in paths {
+      script_push(&config, Vec::from([config.defaults.get("sig_stop").unwrap().to_string(), path]));
+    }
+    process::exit(0);
+  };
 }
 
 fn inputs_match(inputs: &Inputs) -> bool {

@@ -224,13 +224,13 @@ struct OutputFileInitCode {
 
 fn doc_lines_get(config: &Config) -> [String; 5] {
 
-  let form = format!("The default source file path is '{}'. Each script in the source file requires a preceding tag line. A tag line begins with the tag head ('{}') and has an optional label with the tag tail ('{}'). The basic format is as follows:", config.defaults.get("path_src").unwrap(), config.defaults.get("tag_head").unwrap(), config.defaults.get("tag_tail").unwrap());
+  let form = format!("The default source path is '{}'. Each script in the file is preceded by a tag line begun with the tag head ('{}') and an optional label and tail ('{}'):", config.defaults.get("path_src").unwrap(), config.defaults.get("tag_head").unwrap(), config.defaults.get("tag_tail").unwrap());
   let line = format!("{}[ label {}] <OUTPUT EXTENSION / PATH: [[[.../]dirname/]stem.]ext> <COMMAND>", config.defaults.get("tag_head").unwrap(), config.defaults.get("tag_tail").unwrap());
 
   let data_items = format!("Each script is saved with the default output directory ('{}'), source file stem and OUTPUT EXTENSION, or a PATH overriding stem and/or directory, then the COMMAND is run with the save path appended. The '{}' placeholder can be used in the COMMAND to override path position and have the COMMAND passed to '{} {}'; where a script no. is included ('{}') the save path of that script is applied.", config.defaults.get("path_dir").unwrap(), config.defaults.get("plc_path_all").unwrap().replace("{}", ""), config.defaults.get("cmd_prog").unwrap(), config.defaults.get("cmd_flag").unwrap(), config.defaults.get("plc_path_all").unwrap().replace("{}", "n"));
-  let data_chars = format!("The '{}' signal can be used before the EXTENSION etc. to avoid the save and run stages, or before the COMMAND to save but not run. The '{}' placeholder can be used in a full PATH to denote the default or overridden output directory name.", config.defaults.get("sig_stop").unwrap(), config.defaults.get("plc_path_dir").unwrap());
+  let data_chars = format!("The '{}' signal can be used before the EXTENSION etc. to avoid both the save and run stages, or before the COMMAND to avoid run only. The '{}' placeholder can be used in a full PATH to denote the default or overridden output directory name.", config.defaults.get("sig_stop").unwrap(), config.defaults.get("plc_path_dir").unwrap());
 
-  let read = format!("One or more file paths can be piped to aliesce to append the content at each to the source file as a script, auto-preceded by a tag line with '{}', then exit.", config.defaults.get("sig_stop").unwrap());
+  let read = format!("One or more file paths can be piped to aliesce to append the content at each to the source as a script, auto-preceded by a tag line with a base '{}', then exit.", config.defaults.get("sig_stop").unwrap());
 
   [form, line, data_items, data_chars, read]
 }
@@ -350,11 +350,11 @@ fn stdin_read() -> Vec<String> {
 
 fn cli_options_get(config: &Config) -> Vec<CLIOption> {
   Vec::from([
-    CLIOption::new("dest", "d", &["DIR"], &*format!("set the default output directory name (currently '{}') to DIR", config.defaults.get("path_dir").unwrap()), &cli_option_dest_apply),
-    CLIOption::new("list", "l", &[], "print for each script in the source file its number and tag line content, skipping the save and run stages", &cli_option_list_apply),
-    CLIOption::new("only", "o", &["SUBSET"], "include only scripts the numbers of which appear in SUBSET, comma-separated and/or in dash-indicated ranges, e.g. -o 1,3-5", &cli_option_only_apply),
-    CLIOption::new("push", "p", &["LINE", "PATH"], "append to the source file LINE, auto-prefixed with a tag, followed by the content at PATH then exit", &cli_option_push_apply),
-    CLIOption::new("init", "i", &[], &*format!("create a template source file at the default source file path (currently '{}') then exit", config.defaults.get("path_src").unwrap()), &cli_option_init_apply),
+    CLIOption::new("dest", "d", &["DIRNAME"], &*format!("set the default output dirname ('{}') to DIRNAME", config.defaults.get("path_dir").unwrap()), &cli_option_dest_apply),
+    CLIOption::new("list", "l", &[], &*format!("print for each script in the source ('{}') its number and tag line content, without saving or running", config.defaults.get("path_src").unwrap()), &cli_option_list_apply),
+    CLIOption::new("only", "o", &["SUBSET"], "include only the scripts the numbers of which appear in SUBSET, comma-separated and/or as ranges, e.g. -o 1,3-5", &cli_option_only_apply),
+    CLIOption::new("push", "p", &["LINE", "PATH"], &*format!("append to the source ('{}') LINE, auto-prefixed by the tag head, followed by the content at PATH then exit", config.defaults.get("path_src").unwrap()), &cli_option_push_apply),
+    CLIOption::new("init", "i", &[], &*format!("add a source at the default path ('{}') then exit", config.defaults.get("path_src").unwrap()), &cli_option_init_apply),
     CLIOption::new_version(),
     CLIOption::new_help()
   ])
@@ -623,7 +623,7 @@ mod args {
     let notes_body = doc_lines_get(&config).map(|line| line_break_and_indent(&line, 1, 80, true)).join("\n\n");
     let notes_text = format!("Notes:\n{}", notes_body);
 
-    println!("{}\n{}\n{}", usage_text, flags_text, notes_text);
+    println!("{}\n{}\n\n{}", usage_text, flags_text, notes_text);
     process::exit(0);
   }
 

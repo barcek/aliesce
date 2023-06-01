@@ -274,34 +274,22 @@ fn error_handle(strs: (&String, Option<&str>, Option<io::Error>)) -> ! {
 
 fn main() {
 
-  /* set config per defaults, CLI options and args on CLI */
   let config_init = Config { defaults: HashMap::from(DEFAULTS), receipts: HashMap::new() };
   let cli_options = cli_options_get(&config_init);
+
+  /* update config for args passed to command */
   let args_on_cli = env::args().skip(1).collect::<Vec<String>>();
   let config_base = config_update(config_init, &cli_options, &args_remaining_cli_apply, args_on_cli);
 
   if_paths_on_stdin_push_then_exit(&config_base);
 
-  /* load script file content or exit early */
-  let content_whole = fs::read_to_string(&config_base.get_path_src())
-    .unwrap_or_else(|err| error_handle((&format!("Not parsing source file '{}'", config_base.get_path_src()), Some("read"), Some(err))));
+  let src_content = src_content_get(&config_base);
 
-  /* get args section plus each source string (script with tag line minus tag head) numbered, excl. init option content */
-  let [form, line, _, _, _] = &doc_lines_get(&config_base);
-  let content_added = content_whole.replace(form, "").replace(line, "");
-  let mut content_parts = content_added.split(config_base.defaults.get("tag_head").unwrap()).enumerate().collect::<Vec<(usize, &str)>>();
-
-  /* remove any shebang line in args section */
-  if &content_parts[0].1.len() >= &2 && "#!" == &content_parts[0].1[..2] {
-    let remainder = content_parts[0].1.splitn(2, '\n').last().unwrap();
-    content_parts[0] = (content_parts[0].0, remainder);
-  }
-
-  /* update config to encompass args section */
-  let args_in_src = content_parts[0].1.split_whitespace().map(|part| part.trim().to_string()).filter(|part| !part.is_empty()).collect::<Vec<String>>();
+  /* update config for args passed in source */
+  let args_in_src = src_content[0].1.split_whitespace().map(|part| part.trim().to_string()).filter(|part| !part.is_empty()).collect::<Vec<String>>();
   let config_full = config_update(config_base, &cli_options, &args_remaining_src_apply, args_in_src);
 
-  let outputs = content_parts[1..].iter()
+  let outputs = src_content[1..].iter()
     /* process each part to input instance */
     .map(|(i, srcstr)| Inputs { i: *i, srcstr, config: &config_full })
     /* handle option - only - allow subset */
@@ -361,6 +349,25 @@ fn if_paths_on_stdin_push_then_exit(config: &Config) {
     }
     process::exit(0);
   };
+}
+
+fn src_content_get(config: &Config) -> Vec<(usize, String)> {
+
+  let [form, line, _, _, _] = &doc_lines_get(&config);
+
+  /* load source file content as string or exit early */
+  fs::read_to_string(&config.get_path_src())
+    .unwrap_or_else(|err| error_handle((&format!("Not parsing source file '{}'", config.get_path_src()), Some("read"), Some(err))))
+    /* remove any init option text tag heads */
+    .lines()
+    .map(|ln| if form == ln || line == ln { "" } else { ln })
+    .collect::<Vec<&str>>().join("\n")
+    /* get args section plus each source string (script with tag line minus tag head) numbered */
+    .split(config.defaults.get("tag_head").unwrap()).map(|part| part.to_owned())
+    .enumerate()
+    /* remove any shebang line */
+    .map(|(i, part)| if 0 == i && part.len() >= 2 && "#!" == &part[..2] { (i, part.splitn(2, '\n').last().unwrap().to_string()) } else { (i, part) })
+    .collect::<Vec<(usize, String)>>()
 }
 
 fn inputs_match(inputs: &Inputs) -> bool {

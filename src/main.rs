@@ -285,32 +285,20 @@ fn main() {
   let args_on_cli = env::args().skip(1).collect::<Vec<String>>();
   let config_base = config_update(config_init, &cli_options, &args_remaining_cli_apply, args_on_cli);
 
+  /* handle reads from stdin and source path */
   if_paths_on_stdin_push_then_exit(&config_base);
-
   let source = source_get(&config_base);
 
   /* update config for args passed in source */
   let args_in_src = source.preface.split_whitespace().map(|part| part.trim().to_string()).filter(|part| !part.is_empty()).collect::<Vec<String>>();
   let config_full = config_update(config_base, &cli_options, &args_remaining_src_apply, args_in_src);
 
-  let outputs = source.scripts.iter()
-    /* process each part to input instance */
-    .map(|script| Inputs { script: script.to_owned(), config: &config_full })
-    /* handle option - only - allow subset */
-    .filter(inputs_match)
-    /* parse each input to output instance */
-    .map(inputs_parse)
-    .collect::<Vec<Output>>();
+  /* get outputs and output subset as context */
+  let outputs = outputs_get(source, &config_full);
+  let context = context_get(&outputs);
 
-  let context = outputs.iter()
-    /* get each output path with script no. */
-    .fold(HashMap::new(), |mut acc: HashMap<usize, String>, output| {
-      if let Output::File(file) = output { acc.insert(file.i, file.path.get()); }
-      acc
-    });
-
+  /* print output if text or process if file */
   outputs.iter()
-    /* print output text or poss. use file */
     .for_each(|output| { output_apply(output, &context) })
 }
 
@@ -379,13 +367,6 @@ fn source_get(config: &Config) -> Source {
   Source { preface, scripts }
 }
 
-fn inputs_match(inputs: &Inputs) -> bool {
-  !inputs.config.receipts.contains_key("only") || match inputs.config.receipts.get("only").unwrap() {
-    ConfigRecsVal::Ints(val_ints) => val_ints.contains(&(inputs.script.0)),
-    _                            => false
-  }
-}
-
 fn inputs_parse(inputs: Inputs) -> Output {
 
   let Inputs { script, config } = inputs;
@@ -429,6 +410,29 @@ fn inputs_parse(inputs: Inputs) -> Output {
   }
 
   Output::File(OutputFile::new(data, code, number, config))
+}
+
+fn outputs_get(source: Source, config: &Config) -> Vec<Output> {
+  source.scripts.iter()
+    /* process each part to input instance */
+    .map(|script| Inputs { script: script.to_owned(), config })
+    /* handle option - only - allow subset */
+    .filter(|inputs| !inputs.config.receipts.contains_key("only") || match inputs.config.receipts.get("only").unwrap() {
+      ConfigRecsVal::Ints(val_ints) => val_ints.contains(&(inputs.script.0)),
+      _                            => false
+    })
+    /* parse each input to output instance */
+    .map(inputs_parse)
+    .collect::<Vec<Output>>()
+}
+
+fn context_get(outputs: &Vec<Output>) -> HashMap<usize, String> {
+  outputs.iter()
+    /* get each output path with script no. */
+    .fold(HashMap::new(), |mut acc: HashMap<usize, String>, output| {
+      if let Output::File(file) = output { acc.insert(file.i, file.path.get()); }
+      acc
+    })
 }
 
 fn output_apply(output: &Output, context: &HashMap<usize, String>) {

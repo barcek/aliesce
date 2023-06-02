@@ -1,27 +1,34 @@
 /*
-  SOURCE PROCESSING
-  - imports
-  - DEFAULT VALUES, general
-  - data structures
-    - configuration (Config etc.)
-    - consolidation (Inputs, Output etc.)
-  - utility functions, incl. DOC LINES
-  - primary functions, incl. MAIN (w/ CLI OPTIONS)
-  - argument applicators
+  STRUCTURE
 
-  ARGUMENT HANDLING / mod args
-  - imports
-  - data structures
-  - argument applicators ('version', 'help')
-  - utility functions
-  - primary functions
+    modules
 
-  UNIT TESTING / mod test
-  - imports
-  - test cases
+      main / SOURCE PROCESSING
+      - imports
+      - SETTINGS, incl. DEFAULTS, CLI OPTIONS
+      - OVERVIEW, incl. DOC LINES, MAIN
+      - data structures
+        - configuration (Config etc.)
+        - consolidation (Source, Inputs, Output etc.)
+      - utility functions, remaining
+      - primary functions, remaining
+        - general
+        - output handlers
+        - argument applicators
+
+      args / ARGUMENT HANDLING
+      - imports
+      - data structures
+      - argument applicators ('version', 'help')
+      - utility functions
+      - primary functions, remaining
+
+      test / UNIT TESTING
+      - imports
+      - test cases
 */
 
-/* SOURCE PROCESSING */
+/* main / SOURCE PROCESSING */
 
 /* - imports */
 
@@ -36,7 +43,7 @@ use std::collections::HashMap;
 
 use crate::args::{ CLIOption, config_update };
 
-/* - DEFAULT VALUES, general */
+/* - SETTINGS, incl. DEFAULTS, CLI OPTIONS */
 
 static DEFAULTS: [(&str, &str); 9] = [
   ("path_src",     "src.txt"), /* source file path (incl. output stem) */
@@ -49,6 +56,59 @@ static DEFAULTS: [(&str, &str); 9] = [
   ("cmd_prog",     "bash"   ),
   ("cmd_flag",     "-c"     )
 ];
+
+fn cli_options_get(config: &Config) -> Vec<CLIOption> {
+  Vec::from([
+    CLIOption::new("dest", "d", &["DIRNAME"], &*format!("set the default output dirname ('{}') to DIRNAME", config.defaults.get("path_dir").unwrap()), &cli_option_dest_apply),
+    CLIOption::new("list", "l", &[], &*format!("print for each script in the source ('{}') its number and tag line content, without saving or running", config.defaults.get("path_src").unwrap()), &cli_option_list_apply),
+    CLIOption::new("only", "o", &["SUBSET"], "include only the scripts the numbers of which appear in SUBSET, comma-separated and/or as ranges, e.g. -o 1,3-5", &cli_option_only_apply),
+    CLIOption::new("push", "p", &["LINE", "PATH"], &*format!("append to the source ('{}') LINE, auto-prefixed by the tag head, followed by the content at PATH then exit", config.defaults.get("path_src").unwrap()), &cli_option_push_apply),
+    CLIOption::new("init", "i", &[], &*format!("add a source at the default path ('{}') then exit", config.defaults.get("path_src").unwrap()), &cli_option_init_apply),
+    CLIOption::new_version(),
+    CLIOption::new_help()
+  ])
+}
+
+/* - OVERVIEW, incl. DOC LINES, MAIN */
+
+fn doc_lines_get(config: &Config) -> [String; 5] {
+
+  let file = format!("The default source path is '{}'. Each script in the file is preceded by a tag line begun with the tag head ('{}') and an optional label and tail ('{}'):", config.defaults.get("path_src").unwrap(), config.defaults.get("tag_head").unwrap(), config.defaults.get("tag_tail").unwrap());
+  let line = format!("{}[ label {}] <OUTPUT EXTENSION / PATH: [[[.../]dirname/]stem.]ext> <COMMAND>", config.defaults.get("tag_head").unwrap(), config.defaults.get("tag_tail").unwrap());
+
+  let data_main = format!("Each script is saved with the default output directory ('{}'), source file stem and OUTPUT EXTENSION, or a PATH overriding stem and/or directory, then the COMMAND is run with the save path appended. The '{}' placeholder can be used in the COMMAND to override path position and have the COMMAND passed to '{} {}'; where a script no. is included ('{}') the save path of that script is applied.", config.defaults.get("path_dir").unwrap(), config.defaults.get("plc_path_all").unwrap().replace("{}", ""), config.defaults.get("cmd_prog").unwrap(), config.defaults.get("cmd_flag").unwrap(), config.defaults.get("plc_path_all").unwrap().replace("{}", "n"));
+  let data_plus = format!("The '{}' signal can be used before the EXTENSION etc. to avoid both the save and run stages, or before the COMMAND to avoid run only. The '{}' placeholder can be used in a full PATH to denote the default or overridden output directory name.", config.defaults.get("sig_stop").unwrap(), config.defaults.get("plc_path_dir").unwrap());
+
+  let pipe = format!("One or more file paths can be piped to aliesce to append the content at each to the source as a script, auto-preceded by a tag line with a base '{}', then exit.", config.defaults.get("sig_stop").unwrap());
+
+  [file, line, data_main, data_plus, pipe]
+}
+
+fn main() {
+
+  let config_init = Config { defaults: HashMap::from(DEFAULTS), receipts: HashMap::new() };
+  let cli_options = cli_options_get(&config_init);
+
+  /* update config for args passed to command */
+  let args_on_cli = env::args().skip(1).collect::<Vec<String>>();
+  let config_base = config_update(config_init, &cli_options, &args_remaining_cli_apply, args_on_cli);
+
+  /* handle reads from stdin and source path */
+  if_paths_on_stdin_push_then_exit(&config_base);
+  let source = source_get(&config_base);
+
+  /* update config for args passed in source */
+  let args_in_src = source.preface.split_whitespace().map(|part| part.trim().to_string()).filter(|part| !part.is_empty()).collect::<Vec<String>>();
+  let config_full = config_update(config_base, &cli_options, &args_remaining_src_apply, args_in_src);
+
+  /* get outputs and output subset as context */
+  let outputs = outputs_get(source, &config_full);
+  let context = context_get(&outputs);
+
+  /* print output if text or process if file */
+  outputs.iter()
+    .for_each(|output| { output_apply(output, &context) })
+}
 
 /* - data structures */
 
@@ -224,20 +284,7 @@ struct OutputFileInitCode {
   plcs: Vec<(i8, String)>
 }
 
-/* - utility functions, incl. DOC LINES */
-
-fn doc_lines_get(config: &Config) -> [String; 5] {
-
-  let form = format!("The default source path is '{}'. Each script in the file is preceded by a tag line begun with the tag head ('{}') and an optional label and tail ('{}'):", config.defaults.get("path_src").unwrap(), config.defaults.get("tag_head").unwrap(), config.defaults.get("tag_tail").unwrap());
-  let line = format!("{}[ label {}] <OUTPUT EXTENSION / PATH: [[[.../]dirname/]stem.]ext> <COMMAND>", config.defaults.get("tag_head").unwrap(), config.defaults.get("tag_tail").unwrap());
-
-  let data_items = format!("Each script is saved with the default output directory ('{}'), source file stem and OUTPUT EXTENSION, or a PATH overriding stem and/or directory, then the COMMAND is run with the save path appended. The '{}' placeholder can be used in the COMMAND to override path position and have the COMMAND passed to '{} {}'; where a script no. is included ('{}') the save path of that script is applied.", config.defaults.get("path_dir").unwrap(), config.defaults.get("plc_path_all").unwrap().replace("{}", ""), config.defaults.get("cmd_prog").unwrap(), config.defaults.get("cmd_flag").unwrap(), config.defaults.get("plc_path_all").unwrap().replace("{}", "n"));
-  let data_chars = format!("The '{}' signal can be used before the EXTENSION etc. to avoid both the save and run stages, or before the COMMAND to avoid run only. The '{}' placeholder can be used in a full PATH to denote the default or overridden output directory name.", config.defaults.get("sig_stop").unwrap(), config.defaults.get("plc_path_dir").unwrap());
-
-  let read = format!("One or more file paths can be piped to aliesce to append the content at each to the source as a script, auto-preceded by a tag line with a base '{}', then exit.", config.defaults.get("sig_stop").unwrap());
-
-  [form, line, data_items, data_chars, read]
-}
+/* - utility functions, remaining */
 
 fn script_push(config: &Config, strs: Vec<String>) {
 
@@ -274,45 +321,9 @@ fn error_handle(strs: (&String, Option<&str>, Option<io::Error>)) -> ! {
   process::exit(1);
 }
 
-/* - primary functions, incl. MAIN (w/ CLI OPTIONS) */
+/* - primary functions, remaining */
 
-fn main() {
-
-  let config_init = Config { defaults: HashMap::from(DEFAULTS), receipts: HashMap::new() };
-  let cli_options = cli_options_get(&config_init);
-
-  /* update config for args passed to command */
-  let args_on_cli = env::args().skip(1).collect::<Vec<String>>();
-  let config_base = config_update(config_init, &cli_options, &args_remaining_cli_apply, args_on_cli);
-
-  /* handle reads from stdin and source path */
-  if_paths_on_stdin_push_then_exit(&config_base);
-  let source = source_get(&config_base);
-
-  /* update config for args passed in source */
-  let args_in_src = source.preface.split_whitespace().map(|part| part.trim().to_string()).filter(|part| !part.is_empty()).collect::<Vec<String>>();
-  let config_full = config_update(config_base, &cli_options, &args_remaining_src_apply, args_in_src);
-
-  /* get outputs and output subset as context */
-  let outputs = outputs_get(source, &config_full);
-  let context = context_get(&outputs);
-
-  /* print output if text or process if file */
-  outputs.iter()
-    .for_each(|output| { output_apply(output, &context) })
-}
-
-fn cli_options_get(config: &Config) -> Vec<CLIOption> {
-  Vec::from([
-    CLIOption::new("dest", "d", &["DIRNAME"], &*format!("set the default output dirname ('{}') to DIRNAME", config.defaults.get("path_dir").unwrap()), &cli_option_dest_apply),
-    CLIOption::new("list", "l", &[], &*format!("print for each script in the source ('{}') its number and tag line content, without saving or running", config.defaults.get("path_src").unwrap()), &cli_option_list_apply),
-    CLIOption::new("only", "o", &["SUBSET"], "include only the scripts the numbers of which appear in SUBSET, comma-separated and/or as ranges, e.g. -o 1,3-5", &cli_option_only_apply),
-    CLIOption::new("push", "p", &["LINE", "PATH"], &*format!("append to the source ('{}') LINE, auto-prefixed by the tag head, followed by the content at PATH then exit", config.defaults.get("path_src").unwrap()), &cli_option_push_apply),
-    CLIOption::new("init", "i", &[], &*format!("add a source at the default path ('{}') then exit", config.defaults.get("path_src").unwrap()), &cli_option_init_apply),
-    CLIOption::new_version(),
-    CLIOption::new_help()
-  ])
-}
+/*   - general */
 
 fn if_paths_on_stdin_push_then_exit(config: &Config) {
 
@@ -345,14 +356,14 @@ fn if_paths_on_stdin_push_then_exit(config: &Config) {
 
 fn source_get(config: &Config) -> Source {
 
-  let [form, line, _, _, _] = &doc_lines_get(&config);
+  let [doc_line_file, doc_line_line, _, _, _] = &doc_lines_get(&config);
 
   /* load source file content as string or exit early */
   let sections = fs::read_to_string(&config.get_path_src())
     .unwrap_or_else(|err| error_handle((&format!("Not parsing source file '{}'", config.get_path_src()), Some("read"), Some(err))))
     /* remove any init option text tag heads */
     .lines()
-    .map(|ln| if form == ln || line == ln { "" } else { ln })
+    .map(|line| if doc_line_file == line || doc_line_line == line { "" } else { line })
     .collect::<Vec<&str>>().join("\n")
     /* get args section plus each source string (script with tag line minus tag head) numbered */
     .split(config.defaults.get("tag_head").unwrap()).map(|part| part.to_owned())
@@ -435,6 +446,8 @@ fn context_get(outputs: &Vec<Output>) -> HashMap<usize, String> {
     })
 }
 
+/*   - output handlers */
+
 fn output_apply(output: &Output, context: &HashMap<usize, String>) {
   match output {
     Output::Text(e) => {
@@ -494,7 +507,7 @@ fn output_exec(output: &OutputFile, context: &HashMap<usize, String>) {
   }
 }
 
-/* - argument applicators */
+/*   - argument applicators */
 
 fn cli_option_dest_apply(_0: &Config, _1: &[CLIOption], strs: Vec<String>) -> ConfigRecsVal {
   ConfigRecsVal::Strs(strs)
@@ -521,7 +534,7 @@ fn cli_option_push_apply(config: &Config, _0: &[CLIOption], strs: Vec<String>) -
 
 fn cli_option_init_apply(config: &Config, _0: &[CLIOption], _1: Vec<String>) -> ConfigRecsVal {
 
-  let [form, line, data_items, data_chars, read] = doc_lines_get(&config);
+  let [file, line, data_main, data_plus, pipe] = doc_lines_get(&config);
   let src = &config.defaults.get("path_src").unwrap();
 
   let content = format!("\
@@ -532,7 +545,7 @@ fn cli_option_init_apply(config: &Config, _0: &[CLIOption], _1: Vec<String>) -> 
     {}\n\n\
     Tag line and script section:\n\n\
     {}\n\n<script>\n\
-    ", form, data_items, data_chars, read, line
+    ", file, data_main, data_plus, pipe, line
   );
 
   /* handle write */
@@ -560,7 +573,7 @@ fn args_remaining_src_apply(config: Config, _: Vec<String>) -> Config {
   config
 }
 
-/* ARGUMENT HANDLING */
+/* args / ARGUMENT HANDLING */
 
 mod args {
 
@@ -677,7 +690,7 @@ mod args {
     if indent_first { format!("{}{}", whitespace_part, body) } else { body }
   }
 
-  /* - primary functions */
+  /* - primary functions, remaining */
 
   pub fn config_update(mut config: Config<'static>, cli_options: &[CLIOption], handle_remaining: &CLIArgHandler, args: Vec<String>) -> Config<'static> {
 
@@ -716,7 +729,7 @@ mod args {
   }
 }
 
-/* UNIT TESTING */
+/* test / UNIT TESTING */
 
 #[cfg(test)]
 mod test {

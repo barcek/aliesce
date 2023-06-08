@@ -180,16 +180,25 @@ The tests themselves are in the test module at the base of the file.
 
 The following are the expected next steps in the development of the code base. The general medium-term aim is a convenient parallel scripting tool. Pull requests are welcome for these and other potential improvements.
 
-- allow for an alternative output directory with the default basename
-- allow for arguments to scripts run from aliesce
+- add source file variables available to tag line and script:
+  - passed to aliesce via CLI
+  - declared in file, including from the environment
+  - for defaults
+- extend and/or revise the set of placeholders for:
+  - all default path parts
+  - use across save path and command
 - provide tag line options for:
   - multiple save paths
   - auxiliary commands
 - provide or extend CLI options for:
   - output verbosity
   - applying a single stage
-  - listing output paths only
+  - listing save paths
   - importing a script to an arbitrary position
+  - interaction with existing scripts:
+    - tag line editing
+    - reordering
+    - deleting
 - refactor as more idiomatic
 - improve error handling
 - extend test module

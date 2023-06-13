@@ -617,11 +617,13 @@ mod args {
   /* - argument applicator ('help') */
 
   fn cli_option_version_apply(_0: &Config, _1: &[CLIOption], _2: Vec<String>) -> ConfigRecsVal {
-    println!("{} v{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+    println!("{}", name_and_version_get());
     process::exit(0);
   }
 
   fn cli_option_help_apply(config: &Config, cli_options: &[CLIOption], _0: Vec<String>) -> ConfigRecsVal {
+
+    let line_length_max = 80;
 
     /* set value substrings and max length */
     let strs_strs = cli_options.iter()
@@ -635,6 +637,9 @@ mod args {
     let flag_strs_max = flag_strs.iter()
       .fold(0, |acc, arg_str| if arg_str.len() > acc { arg_str.len() } else { acc });
 
+    /* generate title line */
+    let title_line = format!("{}", line_center_with_fill(&name_and_version_get(), line_length_max, "-"));
+
     /* generate usage text */
     let usage_opts_part = cli_options.iter()
       .filter(|cli_option| cli_option.word != "help") /* avoid duplication */
@@ -642,14 +647,14 @@ mod args {
       .map(|(i, cli_option)| format!("[--{}/-{}{}]", cli_option.word, cli_option.char, if strs_strs[i].is_empty() { "".to_owned() } else { " ".to_owned() + &strs_strs[i] }))
       .collect::<Vec<String>>()
       .join(" ");
-    let usage_opts_full = line_break_and_indent(&format!("[--help/-h / {} [source]]", usage_opts_part), 15, 80, false);
+    let usage_opts_full = line_break_and_indent(&format!("[--help/-h / {} [source]]", usage_opts_part), 15, line_length_max, false);
     let usage_text = format!("Usage: aliesce {}", usage_opts_full);
 
     /* generate flags text */
     let flags_list = cli_options.iter()
       .enumerate() /* yield also index (i) */
       .map(|(i, cli_option)| {
-        let desc = line_break_and_indent(&cli_option.desc, flag_strs_max + strs_strs_max + 2, 80, false);
+        let desc = line_break_and_indent(&cli_option.desc, flag_strs_max + strs_strs_max + 2, line_length_max, false);
         format!(" {}  {:w$}  {}", flag_strs[i], strs_strs[i], desc, w = flag_strs_max - cli_option.word.len())
       })
       .collect::<Vec<String>>()
@@ -657,14 +662,24 @@ mod args {
     let flags_text = format!("Flags:\n{}", flags_list);
 
     /* generate notes text */
-    let notes_body = doc_lines_get(&config).map(|line| line_break_and_indent(&line, 1, 80, true)).join("\n\n");
+    let notes_body = doc_lines_get(&config).map(|line| line_break_and_indent(&line, 1, line_length_max, true)).join("\n\n");
     let notes_text = format!("Notes:\n{}", notes_body);
 
-    println!("{}\n{}\n\n{}", usage_text, flags_text, notes_text);
+    println!("{}\n\n{}\n{}\n\n{}", title_line, usage_text, flags_text, notes_text);
     process::exit(0);
   }
 
   /* - utility functions */
+
+  fn name_and_version_get() -> String {
+    format!("{} v{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
+  }
+
+  fn line_center_with_fill(line: &str, length: usize, fill: &str) -> String {
+    let whitespace_half = String::from(fill).repeat((length - line.len() - 2) / 2);
+    let whitespace_last = if 0 == line.len() % 2 { "" } else { fill };
+    format!("{} {} {}{}", whitespace_half, line, whitespace_half, whitespace_last)
+  }
 
   fn line_break_and_indent(line: &str, indent: usize, length: usize, indent_first: bool ) -> String {
 

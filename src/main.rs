@@ -9,7 +9,7 @@
       - OVERVIEW, incl. DOC LINES, MAIN
       - data structures
         - configuration (Config etc.)
-        - consolidation (Source, Inputs, Output etc.)
+        - consolidation (Source, Script, Output etc.)
       - utility functions, remaining
       - primary functions, remaining
         - general
@@ -151,12 +151,24 @@ pub enum ConfigRecsVal {
 
 struct Source {
   preface: String,
-  scripts: Vec<(usize, String)>
+  scripts: Vec<Script>
 }
 
-struct Inputs<'a> {
-  script: (usize, String),
-  config: &'a Config<'a>
+struct Script {
+  n:    usize,
+  line: String,
+  body: String
+}
+
+impl Script {
+  fn new(n: usize, text: String) -> Script {
+
+    let mut lines = text.lines();
+    let line = lines.nth(0).unwrap().to_string();
+    let body = lines.skip(1).collect::<Vec<&str>>().join("\n");
+
+    Script { n, line, body }
+  }
 }
 
 #[derive(Debug, PartialEq)]
@@ -177,11 +189,11 @@ struct OutputFile {
   code: String,
   path: OutputFilePath,
   init: OutputFileInit,
-  i: usize
+  n: usize
 }
 
 impl OutputFile {
-  fn new(data: Vec<String>, code: String, i: usize, config: &Config) -> OutputFile {
+  fn new(data: Vec<String>, code: String, n: usize, config: &Config) -> OutputFile {
 
     let Config { defaults, receipts: _ } = config;
 
@@ -211,12 +223,12 @@ impl OutputFile {
 
     /* handle file run precluded */
     if data.len() == 1 {
-      let init = OutputFileInit::Text(OutputText::Stderr(format!("Not running file no. {} (no values)", i)));
-      return OutputFile { data, code, path, init, i };
+      let init = OutputFileInit::Text(OutputText::Stderr(format!("Not running file no. {} (no values)", n)));
+      return OutputFile { data, code, path, init, n };
     }
     if data.get(1).unwrap() == defaults.get("sig_stop").unwrap() {
-      let init = OutputFileInit::Text(OutputText::Stderr(format!("Not running file no. {} ({} applied)", i, defaults.get("sig_stop").unwrap())));
-      return OutputFile { data, code, path, init, i };
+      let init = OutputFileInit::Text(OutputText::Stderr(format!("Not running file no. {} ({} applied)", n, defaults.get("sig_stop").unwrap())));
+      return OutputFile { data, code, path, init, n };
     }
 
     /* set as plcs any uses of output path placeholder and note presence as indicator of composite command */
@@ -254,7 +266,7 @@ impl OutputFile {
 
     let init = OutputFileInit::Code(OutputFileInitCode { prog, args, plcs });
 
-    OutputFile { data, code, path, init, i }
+    OutputFile { data, code, path, init, n }
   }
 }
 
@@ -373,67 +385,59 @@ fn source_get(config: &Config) -> Source {
     .collect::<Vec<(usize, String)>>();
 
   let preface = String::from(&sections[0].1);
-  let scripts = Vec::from(sections.split_at(1).1);
+  let scripts = Vec::from(sections.split_at(1).1).iter().map(|section| Script::new(section.0, section.1.to_owned())).collect::<Vec<Script>>();
 
   Source { preface, scripts }
 }
 
-fn inputs_parse(inputs: Inputs) -> Output {
+fn inputs_parse(script: &Script, config: &Config) -> Output {
 
-  let Inputs { script, config } = inputs;
-  let (number, srcstr) = script;
+  let Script { n, line, body } = script;
   let Config { defaults, receipts } = config;
 
-  let mut lines = srcstr.lines();
-  let tag_line_part = lines.nth(0).unwrap();
-
   /* get label and data from tag line */
-  let tag_line_sections = match tag_line_part.find(defaults.get("tag_tail").unwrap()) {
-    Some(i) => tag_line_part.split_at(i + 1),
-    None    => ("", tag_line_part)
+  let line_sections = match line.find(defaults.get("tag_tail").unwrap()) {
+    Some(i) => line.split_at(i + 1),
+    None    => ("", line.as_str())
   };
-  let tag_line_label = tag_line_sections.0.split(defaults.get("tag_tail").unwrap()).nth(0).unwrap(); /* untrimmed */
-  let tag_line_data  = tag_line_sections.1.trim();
+  let line_label = line_sections.0.split(defaults.get("tag_tail").unwrap()).nth(0).unwrap(); /* untrimmed */
+  let line_data  = line_sections.1.trim();
 
   /* handle option - list - print only */
   if receipts.contains_key("list") {
-    let join = if !tag_line_label.is_empty() { [tag_line_label, ":"].concat() } else { "".to_string() };
-    let text = format!("{}:{} {}", number, join, tag_line_data);
+    let join = if !line_label.is_empty() { [line_label, ":"].concat() } else { "".to_string() };
+    let text = format!("{}:{} {}", n, join, line_data);
     return Output::Text(OutputText::Stdout(text));
   };
 
-  let code = lines.skip(1).collect::<Vec<&str>>().join("\n");
-
   /* get items from tag line data */
-  let data = tag_line_data.split(' ')
+  let data = line_data.split(' ')
     .map(|item| item.to_string())
     .filter(|item| !item.is_empty()) /* remove whitespace */
     .collect::<Vec<String>>();
 
   /* handle data absent or bypass */
   if data.is_empty() {
-    let text = format!("No tag data found for script no. {}", number);
+    let text = format!("No tag data found for script no. {}", n);
     return Output::Text(OutputText::Stderr(text));
   }
   if data.get(0).unwrap() == defaults.get("sig_stop").unwrap() {
-    let text = format!("Bypassing script no. {} ({} applied)", number, defaults.get("sig_stop").unwrap());
+    let text = format!("Bypassing script no. {} ({} applied)", n, defaults.get("sig_stop").unwrap());
     return Output::Text(OutputText::Stderr(text));
   }
 
-  Output::File(OutputFile::new(data, code, number, config))
+  Output::File(OutputFile::new(data, body.to_owned(), n.to_owned(), config))
 }
 
 fn outputs_get(source: Source, config: &Config) -> Vec<Output> {
   source.scripts.iter()
-    /* process each part to input instance */
-    .map(|script| Inputs { script: script.to_owned(), config })
     /* handle option - only - allow subset */
-    .filter(|inputs| !inputs.config.receipts.contains_key("only") || match inputs.config.receipts.get("only").unwrap() {
-      ConfigRecsVal::Ints(val_ints) => val_ints.contains(&(inputs.script.0)),
-      _                            => false
+    .filter(|script| !config.receipts.contains_key("only") || match config.receipts.get("only").unwrap() {
+      ConfigRecsVal::Ints(val_ints) => val_ints.contains(&script.n),
+      _                             => false
     })
-    /* parse each input to output instance */
-    .map(inputs_parse)
+    /* parse input set to output instance */
+    .map(|script| inputs_parse(script, &config))
     .collect::<Vec<Output>>()
 }
 
@@ -441,7 +445,7 @@ fn context_get(outputs: &Vec<Output>) -> HashMap<usize, String> {
   outputs.iter()
     /* get each output path with script no. */
     .fold(HashMap::new(), |mut acc: HashMap<usize, String>, output| {
-      if let Output::File(file) = output { acc.insert(file.i, file.path.get()); }
+      if let Output::File(file) = output { acc.insert(file.n, file.path.get()); }
       acc
     })
 }
@@ -462,7 +466,7 @@ fn output_apply(output: &Output, context: &HashMap<usize, String>) {
 
 fn output_save(output: &OutputFile) {
 
-  let OutputFile { data: _, code, path, init: _, i: _ } = output;
+  let OutputFile { data: _, code, path, init: _, n: _ } = output;
   let dir = &path.dir;
   let path = path.get();
 
@@ -474,7 +478,7 @@ fn output_save(output: &OutputFile) {
 
 fn output_exec(output: &OutputFile, context: &HashMap<usize, String>) {
 
-  let OutputFile { data: _, code: _, path: _, init, i } = output;
+  let OutputFile { data: _, code: _, path: _, init, n } = output;
 
   match init {
 
@@ -494,7 +498,7 @@ fn output_exec(output: &OutputFile, context: &HashMap<usize, String>) {
       } else {
         let mut cmd = if 0 == plcs.len() { String::new() } else { args[1].to_owned() };
         plcs.iter().for_each(|plc| {
-          let path = if 0 == plc.0 { context.get(i).unwrap() } else { context.get(&(plc.0 as usize)).unwrap() };
+          let path = if 0 == plc.0 { context.get(n).unwrap() } else { context.get(&(plc.0 as usize)).unwrap() };
           cmd = cmd.replace(plc.1.as_str(), path.as_str()).to_owned();
         });
         Vec::from([args[0].to_owned(), cmd])
@@ -755,7 +759,7 @@ mod test {
   use super::{
     DEFAULTS,
     Config, ConfigRecsVal,
-    Inputs,
+    Script,
     Output, OutputText, OutputFile, OutputFilePath, OutputFileInit, OutputFileInitCode,
     inputs_parse
   };
@@ -764,7 +768,7 @@ mod test {
 
   /*   - function: inputs_parse */
 
-  fn get_values_for_inputs_parse() -> (Config<'static>, usize, String, OutputFilePath, OutputFileInit) {
+  fn get_values_for_inputs_parse() -> (Config<'static>, String, usize, String, OutputFilePath, OutputFileInit) {
 
     let config_default = Config {
       defaults: HashMap::from(DEFAULTS),
@@ -779,7 +783,9 @@ mod test {
       ext:  String::from("ext")
     };
 
-    let index = 1;
+    let body = "//code".to_string();
+
+    let number = 1;
     let prog  = String::from("program");
     let args  = Vec::from([String::from("--flag"), String::from("value"), output_path.get()]);
     let plcs  = Vec::new();
@@ -787,18 +793,19 @@ mod test {
 
     let output_init = OutputFileInit::Code(OutputFileInitCode { prog, args, plcs });
 
-    (config_default, index, code, output_path, output_init)
+    (config_default, body, number, code, output_path, output_init)
   }
 
   #[test]
   fn inputs_parse_returns_for_tag_data_full_some_output() {
 
-    let (config_default, i, code, path, init) = get_values_for_inputs_parse();
-    let script_plus_tag_line_part = " ext program --flag value\n\n//code".to_string();
+    let (config_default, body, n, code, path, init) = get_values_for_inputs_parse();
+
+    let line = " ext program --flag value\n".to_string();
     let data = Vec::from(["ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
-    let expected = Output::File(OutputFile { data, code, path, init, i });
-    let obtained = inputs_parse(Inputs { script: (i, script_plus_tag_line_part), config: &config_default });
+    let expected = Output::File(OutputFile { data, code, path, init, n });
+    let obtained = inputs_parse(&Script { n, line, body }, &config_default);
 
     assert_eq!(expected, obtained);
   }
@@ -806,12 +813,13 @@ mod test {
   #[test]
   fn inputs_parse_returns_for_tag_label_and_data_full_some_output_file() {
 
-    let (config_default, i, code, path, init) = get_values_for_inputs_parse();
-    let script_plus_tag_line_part = " label # ext program --flag value\n\n//code".to_string();
+    let (config_default, body, n, code, path, init) = get_values_for_inputs_parse();
+
+    let line = " label # ext program --flag value\n".to_string();
     let data = Vec::from(["ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
-    let expected = Output::File(OutputFile { data, code, path, init, i });
-    let obtained = inputs_parse(Inputs { script: (i, script_plus_tag_line_part), config: &config_default });
+    let expected = Output::File(OutputFile { data, code, path, init, n });
+    let obtained = inputs_parse(&Script { n, line, body }, &config_default);
 
     assert_eq!(expected, obtained);
   }
@@ -819,9 +827,9 @@ mod test {
   #[test]
   fn inputs_parse_returns_for_dest_option_some_output_file() {
 
-    let (mut config_default, i, code, _, mut init) = get_values_for_inputs_parse();
-    let script_plus_tag_line_part = " ext program --flag value\n\n//code".to_string();
+    let (mut config_default, body, n, code, _, mut init) = get_values_for_inputs_parse();
 
+    let line = " ext program --flag value\n".to_string();
     let data = Vec::from(["ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
     let dir = String::from("dest");
@@ -832,8 +840,8 @@ mod test {
     match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
     config_default.receipts.insert("dest".to_string(), ConfigRecsVal::Strs(Vec::from([String::from("dest")])));
 
-    let expected = Output::File(OutputFile { data, code, path, init, i });
-    let obtained = inputs_parse(Inputs { script: (i, script_plus_tag_line_part), config: &config_default });
+    let expected = Output::File(OutputFile { data, code, path, init, n });
+    let obtained = inputs_parse(&Script { n, line, body }, &config_default);
 
     assert_eq!(expected, obtained);
   }
@@ -841,13 +849,14 @@ mod test {
   #[test]
   fn inputs_parse_returns_for_list_option_some_output_text() {
 
-    let (mut config_default, i, _, _, _) = get_values_for_inputs_parse();
-    let script_plus_tag_line_part = " ext program --flag value\n\n//code".to_string();
+    let (mut config_default, body, n, _, _, _) = get_values_for_inputs_parse();
+
+    let line = " ext program --flag value\n".to_string();
 
     config_default.receipts.insert("list".to_string(), ConfigRecsVal::Bool);
 
     let expected = Output::Text(OutputText::Stdout(String::from("1: ext program --flag value")));
-    let obtained = inputs_parse(Inputs { script: (i, script_plus_tag_line_part), config: &config_default });
+    let obtained = inputs_parse(&Script { n, line, body }, &config_default);
 
     assert_eq!(expected, obtained);
   }
@@ -855,9 +864,9 @@ mod test {
   #[test]
   fn inputs_parse_returns_for_tag_data_full_incl_singlepart_output_stem_some_output_file() {
 
-    let (config_default, i, code, _, mut init) = get_values_for_inputs_parse();
-    let script_plus_tag_line_part = " script.ext program --flag value\n\n//code".to_string();
+    let (config_default, body, n, code, _, mut init) = get_values_for_inputs_parse();
 
+    let line = " script.ext program --flag value\n".to_string();
     let data = Vec::from(["script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
     let dir = String::from(config_default.defaults.get("path_dir").unwrap().to_owned());
@@ -867,8 +876,8 @@ mod test {
 
     match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
 
-    let expected = Output::File(OutputFile { data, code, path, init, i });
-    let obtained = inputs_parse(Inputs { script: (i, script_plus_tag_line_part), config: &config_default });
+    let expected = Output::File(OutputFile { data, code, path, init, n });
+    let obtained = inputs_parse(&Script { n, line, body }, &config_default);
 
     assert_eq!(expected, obtained);
   }
@@ -876,9 +885,9 @@ mod test {
   #[test]
   fn inputs_parse_returns_for_tag_data_full_incl_multipart_output_stem_some_output_file() {
 
-    let (config_default, i, code, _, mut init) = get_values_for_inputs_parse();
-    let script_plus_tag_line_part = " script.suffix1.suffix2.ext program --flag value\n\n//code".to_string();
+    let (config_default, body, n, code, _, mut init) = get_values_for_inputs_parse();
 
+    let line = " script.suffix1.suffix2.ext program --flag value\n".to_string();
     let data = Vec::from(["script.suffix1.suffix2.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
     let dir = String::from(config_default.defaults.get("path_dir").unwrap().to_owned());
@@ -888,8 +897,8 @@ mod test {
 
     match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
 
-    let expected = Output::File(OutputFile { data, code, path, init, i });
-    let obtained = inputs_parse(Inputs { script: (i, script_plus_tag_line_part), config: &config_default });
+    let expected = Output::File(OutputFile { data, code, path, init, n });
+    let obtained = inputs_parse(&Script { n, line, body }, &config_default);
 
     assert_eq!(expected, obtained);
   }
@@ -897,9 +906,9 @@ mod test {
   #[test]
   fn inputs_parse_returns_for_tag_data_full_incl_output_dir_some_output_file() {
 
-    let (config_default, i, code, _, mut init) = get_values_for_inputs_parse();
-    let script_plus_tag_line_part = " dir/script.ext program --flag value\n\n//code".to_string();
+    let (config_default, body, n, code, _, mut init) = get_values_for_inputs_parse();
 
+    let line = " dir/script.ext program --flag value\n".to_string();
     let data = Vec::from(["dir/script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
     let dir = String::from("dir");
@@ -909,8 +918,8 @@ mod test {
 
     match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
 
-    let expected = Output::File(OutputFile { data, code, path, init, i });
-    let obtained = inputs_parse(Inputs { script: (i, script_plus_tag_line_part), config: &config_default });
+    let expected = Output::File(OutputFile { data, code, path, init, n });
+    let obtained = inputs_parse(&Script { n, line, body }, &config_default);
 
     assert_eq!(expected, obtained);
   }
@@ -918,9 +927,9 @@ mod test {
   #[test]
   fn inputs_parse_returns_for_tag_data_full_incl_output_path_dir_placeholder_some_output_file() {
 
-    let (config_default, i, code, _, mut init) = get_values_for_inputs_parse();
-    let script_plus_tag_line_part = " >/script.ext program --flag value\n\n//code".to_string();
+    let (config_default, body, n, code, _, mut init) = get_values_for_inputs_parse();
 
+    let line = " >/script.ext program --flag value\n".to_string();
     let data = Vec::from([">/script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
 
     let dir = String::from("scripts");
@@ -930,8 +939,8 @@ mod test {
 
     match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
 
-    let expected = Output::File(OutputFile { data, code, path, init, i });
-    let obtained = inputs_parse(Inputs { script: (i, script_plus_tag_line_part), config: &config_default });
+    let expected = Output::File(OutputFile { data, code, path, init, n });
+    let obtained = inputs_parse(&Script { n, line, body }, &config_default);
 
     assert_eq!(expected, obtained);
   }
@@ -939,8 +948,9 @@ mod test {
   #[test]
   fn inputs_parse_returns_for_tag_data_full_incl_output_path_all_placeholder_some_output() {
 
-    let (config_default, i, code, path, _) = get_values_for_inputs_parse();
-    let script_plus_tag_line_part = " ext program_1 --flag value >< | program_2\n\n//code".to_string();
+    let (config_default, body, n, code, path, _) = get_values_for_inputs_parse();
+
+    let line = " ext program_1 --flag value >< | program_2\n".to_string();
     let data = Vec::from(["ext".to_string(), "program_1".to_string(), "--flag".to_string(), "value".to_string(), "><".to_string(), "|".to_string(), "program_2".to_string()]);
 
     let prog = String::from(config_default.defaults.get("cmd_prog").unwrap().to_owned());
@@ -948,8 +958,8 @@ mod test {
     let plcs = Vec::from([(0, String::from("><"))]);
     let init = OutputFileInit::Code(OutputFileInitCode { prog, args, plcs });
 
-    let expected = Output::File(OutputFile { data, code, path, init, i });
-    let obtained = inputs_parse(Inputs { script: (i, script_plus_tag_line_part), config: &config_default });
+    let expected = Output::File(OutputFile { data, code, path, init, n });
+    let obtained = inputs_parse(&Script { n, line, body }, &config_default);
 
     assert_eq!(expected, obtained);
   }
@@ -957,14 +967,15 @@ mod test {
   #[test]
   fn inputs_parse_returns_for_tag_data_minus_cmd_some_output_file_indicating() {
 
-    let (config_default, i, code, path, _) = get_values_for_inputs_parse();
-    let script_plus_tag_line_part = " ext\n\n//code".to_string();
+    let (config_default, body, n, code, path, _) = get_values_for_inputs_parse();
 
+    let line = " ext\n".to_string();
     let data = Vec::from(["ext".to_string()]);
+
     let init = OutputFileInit::Text(OutputText::Stderr(String::from("Not running file no. 1 (no values)")));
 
-    let expected = Output::File(OutputFile { data, code, path, init, i });
-    let obtained = inputs_parse(Inputs { script: (i, script_plus_tag_line_part), config: &config_default });
+    let expected = Output::File(OutputFile { data, code, path, init, n });
+    let obtained = inputs_parse(&Script { n, line, body }, &config_default);
 
     assert_eq!(expected, obtained);
   }
@@ -972,11 +983,12 @@ mod test {
   #[test]
   fn inputs_parse_returns_for_tag_data_full_with_bypass_some_output_text() {
 
-    let (config_default, i, _, _, _) = get_values_for_inputs_parse();
-    let script_plus_tag_line_part = " ! ext program --flag value\n\n//code".to_string();
+    let (config_default, body, n, _, _, _) = get_values_for_inputs_parse();
+
+    let line = " ! ext program --flag value\n".to_string();
 
     let expected = Output::Text(OutputText::Stderr(String::from("Bypassing script no. 1 (! applied)")));
-    let obtained = inputs_parse(Inputs { script: (i, script_plus_tag_line_part), config: &config_default });
+    let obtained = inputs_parse(&Script { n, line, body }, &config_default);
 
     assert_eq!(expected, obtained);
   }
@@ -984,11 +996,12 @@ mod test {
   #[test]
   fn inputs_parse_returns_for_tag_data_absent_some_output_text() {
 
-    let (config_default, i, _, _, _) = get_values_for_inputs_parse();
-    let script_plus_tag_line_part = "\n\n//code".to_string();
+    let (config_default, body, n, _, _, _) = get_values_for_inputs_parse();
+
+    let line = "\n".to_string();
 
     let expected = Output::Text(OutputText::Stderr(String::from("No tag data found for script no. 1")));
-    let obtained = inputs_parse(Inputs { script: (i, script_plus_tag_line_part), config: &config_default });
+    let obtained = inputs_parse(&Script { n, line, body }, &config_default);
 
     assert_eq!(expected, obtained);
   }

@@ -658,11 +658,11 @@ mod args {
   type CLIOptionCall = dyn Fn(&Config, &[CLIOption], Vec<String>) -> ConfigRecsVal;
 
   pub struct CLIOption {
-    word: String,
-    char: String,
-    strs: Vec<String>,
-    desc: String,
-    call: Box<CLIOptionCall>
+    pub word: String,
+    pub char: String,
+    pub strs: Vec<String>,
+    pub desc: String,
+        call: Box<CLIOptionCall>
   }
 
   impl CLIOption {
@@ -823,18 +823,78 @@ mod test {
 
   /* - imports */
 
+  use::std::process;
   use::std::collections::HashMap;
   use super::{
     DEFAULTS,
     Config, ConfigRecsVal,
     Script,
     Output, OutputText, OutputFile, OutputFilePath, OutputFileInit, OutputFileInitCode,
-    inputs_parse
+    cli_options_get, doc_lines_get, inputs_parse
   };
 
   /* - test cases */
 
-  /*   - function: inputs_parse */
+  /*   - end-to-end */
+
+  /*     - CLI option: version */
+
+  #[test]
+  fn cli_option_version() {
+
+    let output_raw = process::Command::new("cargo").args(Vec::from(["run", "--", "-v"])).output().unwrap();
+
+    let output = String::from_utf8_lossy(&output_raw.stdout);
+    let output_parts = output.split(" v").map(|part| part.trim()).collect::<Vec<&str>>();
+
+    assert_eq!("aliesce", output_parts[0]);
+    assert_eq!(env!("CARGO_PKG_VERSION"), output_parts[1]);
+  }
+
+  /*     - CLI option: help */
+
+  #[test]
+  fn cli_option_help() {
+
+    let output_raw = process::Command::new("cargo").args(Vec::from(["run", "--", "-h"])).output().unwrap();
+
+    let output = String::from_utf8_lossy(&output_raw.stdout);
+    let output_parts_on_usage = output.split("Usage:").collect::<Vec<&str>>();
+    let output_parts_on_flags = output_parts_on_usage[1].split("Flags:").collect::<Vec<&str>>();
+    let output_parts_on_notes = output_parts_on_flags[1].split("Notes:").collect::<Vec<&str>>();
+
+    let config_init = Config { defaults: HashMap::from(DEFAULTS), receipts: HashMap::new() };
+    let cli_options = cli_options_get(&config_init);
+
+    let doc_lines_line = doc_lines_get(&config_init).join(" ");
+
+    /* title section */
+    let output_title_part = output_parts_on_usage[0];
+    assert!(output_title_part.contains("aliesce"));
+    assert!(output_title_part.contains(env!("CARGO_PKG_VERSION")));
+
+    /* usage section */
+    let output_usage_line = output_parts_on_flags[0].replace("\n", " ");
+    for cli_option in &cli_options {
+      let arg_set = format!("--{}/-{} {}", cli_option.word, cli_option.char, cli_option.strs.join(" "));
+      assert!(output_usage_line.contains(&arg_set.trim()));
+    }
+
+    /* flags section */
+    let output_flags_line_condensed = output_parts_on_notes[0].replace("\n", " ").chars().filter(|char| ' ' != *char).collect::<String>();
+    for cli_option in &cli_options {
+      let flag_line_condensed = format!("-{},--{}{}{}", cli_option.char, cli_option.word, cli_option.strs.join(""), cli_option.desc.replace(" ", ""));
+      assert!(output_flags_line_condensed.contains(&flag_line_condensed));
+    }
+
+    /* notes section */
+    let output_notes_line = output_parts_on_notes[1].replace("\n", "").trim().to_string();
+    assert_eq!(doc_lines_line, output_notes_line);
+  }
+
+  /*   - unit */
+
+  /*     - function: inputs_parse */
 
   fn get_values_for_inputs_parse() -> (Config<'static>, String, usize, String, OutputFilePath, OutputFileInit) {
 

@@ -131,9 +131,10 @@ Spacing between tag head and tail is retained for list entries (see [Options](#o
 The following can be passed to `aliesce` before any source file path:
 
 - `--dest` / `-d`  `DIRNAME`, to set the default output dirname ('scripts') to `DIRNAME`
-- `--list` / `-l`, to print for each script in the source ('src.txt') its number and tag line content, without saving or running
+- `--list` / `-l`, to print for each script in the source (def. 'src.txt') its number and tag line content, without saving or running
 - `--only` / `-o`  `SUBSET`, to include only the scripts the numbers of which appear in `SUBSET`, comma-separated and/or as ranges, e.g. `-o 1,3-5`
-- `--push` / `-p`  `LINE` `PATH`, to append to the source ('src.txt') `LINE`, auto-prefixed by the tag head, followed by the content at `PATH` then exit
+- `--push` / `-p`  `LINE` `PATH`, to append to the source (def. 'src.txt') `LINE`, auto-prefixed by the tag head, followed by the content at `PATH` then exit
+- `--edit` / `-e`  `N` `LINE`, to update the tag line for script number N to LINE, auto-prefixed by the tag head, then exit
 - `--init` / `-i`, to add a source at the default path ('src.txt') then exit
 - `--version` / `-v`, to show name and version number then exit
 - `--help` / `-h`, to show usage, flags available and notes then exit
@@ -196,7 +197,6 @@ The following are the expected next steps in the development of the code base. T
   - listing save paths
   - importing a script to an arbitrary position
   - interaction with existing scripts:
-    - tag line editing
     - reordering
     - deleting
 - refactor as more idiomatic

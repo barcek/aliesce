@@ -35,8 +35,9 @@
 use std::io;
 use std::thread;
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{ Duration, SystemTime };
 use std::env;
+use std::path::Path;
 use std::fs;
 use std::process;
 use std::collections::HashMap;
@@ -45,16 +46,17 @@ use crate::args::{ CLIOption, config_update };
 
 /* - SETTINGS, incl. DEFAULTS, CLI OPTIONS */
 
-static DEFAULTS: [(&str, &str); 9] = [
-  ("path_src",     "src.txt"), /* source file path (incl. output stem) */
-  ("path_dir",     "scripts"), /* output directory name */
-  ("tag_head",     "###"    ),
-  ("tag_tail",     "#"      ),
-  ("sig_stop",     "!"      ),
-  ("plc_path_dir", ">"      ),
-  ("plc_path_all", ">{}<"   ), /* '{}' is optional script no. position */
-  ("cmd_prog",     "bash"   ),
-  ("cmd_flag",     "-c"     )
+static DEFAULTS: [(&str, &str); 10] = [
+  ("path_src",     "src.txt"     ), /* source file path (incl. output stem) */
+  ("path_dir",     "scripts"     ), /* output directory name */
+  ("path_tmp_dir",".aliesce_tmp" ), /* source backup directory name, present during write to source */
+  ("tag_head",     "###"         ),
+  ("tag_tail",     "#"           ),
+  ("sig_stop",     "!"           ),
+  ("plc_path_dir", ">"           ),
+  ("plc_path_all", ">{}<"        ), /* '{}' is optional script no. position */
+  ("cmd_prog",     "bash"        ),
+  ("cmd_flag",     "-c"          )
 ];
 
 fn cli_options_get(config: &Config) -> Vec<CLIOption> {
@@ -63,6 +65,7 @@ fn cli_options_get(config: &Config) -> Vec<CLIOption> {
     CLIOption::new("list", "l", &[], &*format!("print for each script in the source ('{}') its number and tag line content, without saving or running", config.defaults.get("path_src").unwrap()), &cli_option_list_apply),
     CLIOption::new("only", "o", &["SUBSET"], "include only the scripts the numbers of which appear in SUBSET, comma-separated and/or as ranges, e.g. -o 1,3-5", &cli_option_only_apply),
     CLIOption::new("push", "p", &["LINE", "PATH"], &*format!("append to the source ('{}') LINE, auto-prefixed by the tag head, followed by the content at PATH then exit", config.defaults.get("path_src").unwrap()), &cli_option_push_apply),
+    CLIOption::new("edit", "e", &["N", "LINE"], &*format!("update the tag line for script number N to LINE, auto-prefixed by the tag head, then exit"), &cli_option_edit_apply),
     CLIOption::new("init", "i", &[], &*format!("add a source at the default path ('{}') then exit", config.defaults.get("path_src").unwrap()), &cli_option_init_apply),
     CLIOption::new_version(),
     CLIOption::new_help()
@@ -86,6 +89,8 @@ fn doc_lines_get(config: &Config) -> [String; 5] {
 
 fn main() {
 
+  /* INITIAL SETUP */
+
   let config_init = Config { defaults: HashMap::from(DEFAULTS), receipts: HashMap::new() };
   let cli_options = cli_options_get(&config_init);
 
@@ -93,13 +98,19 @@ fn main() {
   let args_on_cli = env::args().skip(1).collect::<Vec<String>>();
   let config_base = config_update(config_init, &cli_options, &args_remaining_cli_apply, args_on_cli);
 
-  /* handle reads from stdin and source path */
+  /* SOURCE APPEND VIA STDIN */
+
   if_paths_on_stdin_push_then_exit(&config_base);
+
+  /* SOURCE UPDATE VIA ARGS OR PROCESS TO OUTPUT */
+
   let source = source_get(&config_base);
 
   /* update config for args passed in source */
   let args_in_src = source.preface.split_whitespace().map(|part| part.trim().to_string()).filter(|part| !part.is_empty()).collect::<Vec<String>>();
   let config_full = config_update(config_base, &cli_options, &args_remaining_src_apply, args_in_src);
+
+  if_change_in_args_make_then_exit(&source, &config_full);
 
   /* get outputs and output subset as context */
   let outputs = outputs_get(source, &config_full);
@@ -366,6 +377,54 @@ fn if_paths_on_stdin_push_then_exit(config: &Config) {
   };
 }
 
+fn if_change_in_args_make_then_exit(source: &Source, config: &Config) {
+
+  let args = match config.receipts.get("edit") {
+    Some(ConfigRecsVal::Strs(strs)) => strs.to_owned(),
+    _                               => Vec::new()
+  };
+
+  /* handle source changes for any args */
+  if !args.is_empty() {
+
+    let arg_n = args[0].parse::<usize>().expect("parse no. for option 'edit'");
+    let arg_line = &args[1];
+
+    /* update tag line and join whole */
+    let source_scripts = source.scripts.iter()
+      .map(|script| {
+        let Script { n, line, body } = script;
+        format!("{}{}\n\n{}\n", config.defaults.get("tag_head").unwrap(), if arg_n == *n { format!(" {}", arg_line) } else { line.to_string() }, body)
+      })
+      .collect::<String>();
+
+    let text = format!("{}{}", source.preface, source_scripts);
+
+    /* write source to file, with backup to then removal of temporary directory */
+    let path_src = config.get_path_src();
+    let path_src_inst = Path::new(&path_src);
+    let path_src_stem = path_src_inst.file_stem().unwrap().to_str().unwrap();
+    let path_src_ext  = path_src_inst.extension().unwrap().to_str().unwrap();
+
+    let secs = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+
+    let path_tmp_dir = config.defaults.get("path_tmp_dir").unwrap();
+    let path_tmp = format!("{}/{}_{}.{}", path_tmp_dir, path_src_stem, secs, path_src_ext);
+
+    fs::create_dir_all(&path_tmp_dir)
+      .unwrap_or_else(|_| panic!("create temporary directory '{}' for source backup", &path_tmp_dir));
+    fs::copy(&path_src, &path_tmp)
+      .unwrap_or_else(|_| panic!("copy source as backup to '{}'", &path_tmp));
+    fs::write(&path_src, text)
+      .unwrap_or_else(|_| panic!("write updated source to '{}'", &path_src));
+    fs::remove_dir_all(&path_tmp_dir)
+      .unwrap_or_else(|_| panic!("remove temporary directory '{}'", &path_tmp_dir));
+
+    println!("Updated tag line for script no. {} to '{}'", arg_n, arg_line);
+    process::exit(0);
+  };
+}
+
 fn source_get(config: &Config) -> Source {
 
   let [doc_line_file, doc_line_line, _, _, _] = &doc_lines_get(&config);
@@ -373,9 +432,10 @@ fn source_get(config: &Config) -> Source {
   /* load source file content as string or exit early */
   let sections = fs::read_to_string(&config.get_path_src())
     .unwrap_or_else(|err| error_handle((&format!("Not parsing source file '{}'", config.get_path_src()), Some("read"), Some(err))))
-    /* remove any init option text tag heads */
+    /* set any init option text with tag head to placeholder */
     .lines()
-    .map(|line| if doc_line_file == line || doc_line_line == line { "" } else { line })
+    .map(|line| if doc_line_file == line { "plc_doc_line_file" } else { line })
+    .map(|line| if doc_line_line == line { "plc_doc_line_line" } else { line })
     .collect::<Vec<&str>>().join("\n")
     /* get args section plus each source string (script with tag line minus tag head) numbered */
     .split(config.defaults.get("tag_head").unwrap()).map(|part| part.to_owned())
@@ -384,7 +444,10 @@ fn source_get(config: &Config) -> Source {
     .map(|(i, part)| if 0 == i && part.len() >= 2 && "#!" == &part[..2] { (i, part.splitn(2, '\n').last().unwrap().to_string()) } else { (i, part) })
     .collect::<Vec<(usize, String)>>();
 
-  let preface = String::from(&sections[0].1);
+  let preface = sections[0].1
+    /* restore any init option text set to placeholder */
+    .replace("plc_doc_line_file", doc_line_file)
+    .replace("plc_doc_line_line", doc_line_line);
   let scripts = Vec::from(sections.split_at(1).1).iter().map(|section| Script::new(section.0, section.1.to_owned())).collect::<Vec<Script>>();
 
   Source { preface, scripts }
@@ -514,6 +577,10 @@ fn output_exec(output: &OutputFile, context: &HashMap<usize, String>) {
 /*   - argument applicators */
 
 fn cli_option_dest_apply(_0: &Config, _1: &[CLIOption], strs: Vec<String>) -> ConfigRecsVal {
+  ConfigRecsVal::Strs(strs)
+}
+
+fn cli_option_edit_apply(_0: &Config, _1: &[CLIOption], strs: Vec<String>) -> ConfigRecsVal {
   ConfigRecsVal::Strs(strs)
 }
 

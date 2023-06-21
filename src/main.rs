@@ -61,12 +61,12 @@ static DEFAULTS: [(&str, &str); 10] = [
 
 fn cli_options_get(config: &Config) -> Vec<CLIOption> {
   Vec::from([
-    CLIOption::new("dest", "d", &["DIRNAME"], &*format!("set the default output dirname ('{}') to DIRNAME", config.defaults.get("path_dir").unwrap()), &cli_option_dest_apply),
-    CLIOption::new("list", "l", &[], &*format!("print for each script in the source ('{}') its number and tag line content, without saving or running", config.defaults.get("path_src").unwrap()), &cli_option_list_apply),
+    CLIOption::new("list", "l", &[], &*format!("print for each script in SOURCE (def. '{}') its number and tag line content, without saving or running", config.defaults.get("path_src").unwrap()), &cli_option_list_apply),
     CLIOption::new("only", "o", &["SUBSET"], "include only the scripts the numbers of which appear in SUBSET, comma-separated and/or as ranges, e.g. -o 1,3-5", &cli_option_only_apply),
-    CLIOption::new("push", "p", &["LINE", "PATH"], &*format!("append to the source ('{}') LINE, auto-prefixed by the tag head, followed by the content at PATH then exit", config.defaults.get("path_src").unwrap()), &cli_option_push_apply),
-    CLIOption::new("edit", "e", &["N", "LINE"], &*format!("update the tag line for script number N to LINE, auto-prefixed by the tag head, then exit"), &cli_option_edit_apply),
+    CLIOption::new("dest", "d", &["DIRNAME"], &*format!("set the default output dirname ('{}') to DIRNAME", config.defaults.get("path_dir").unwrap()), &cli_option_dest_apply),
     CLIOption::new("init", "i", &[], &*format!("add a source at the default path ('{}') then exit", config.defaults.get("path_src").unwrap()), &cli_option_init_apply),
+    CLIOption::new("push", "p", &["LINE", "PATH"], &*format!("append to SOURCE (def. '{}') LINE, auto-prefixed by the tag head, followed by the content at PATH then exit", config.defaults.get("path_src").unwrap()), &cli_option_push_apply),
+    CLIOption::new("edit", "e", &["N", "LINE"], &*format!("update the tag line for script number N to LINE, auto-prefixed by the tag head, then exit"), &cli_option_edit_apply),
     CLIOption::new_version(),
     CLIOption::new_help()
   ])
@@ -713,13 +713,14 @@ mod args {
 
     /* generate usage text */
     let usage_opts_part = cli_options.iter()
-      .filter(|cli_option| cli_option.word != "help") /* avoid duplication */
+      .filter(|cli_option| cli_option.word != "version" && cli_option.word != "help") /* avoid duplication */
       .enumerate() /* yield also index (i) */
       .map(|(i, cli_option)| format!("[--{}/-{}{}]", cli_option.word, cli_option.char, if strs_strs[i].is_empty() { "".to_owned() } else { " ".to_owned() + &strs_strs[i] }))
       .collect::<Vec<String>>()
       .join(" ");
-    let usage_opts_full = line_break_and_indent(&format!("[--help/-h / {} [source]]", usage_opts_part), 15, line_length_max, false);
-    let usage_text = format!("Usage: aliesce {}", usage_opts_full);
+    let usage_opts_head = line_break_and_indent(&format!("{} [SOURCE]", usage_opts_part), 15, line_length_max, false);
+    let usage_opts_tail = line_break_and_indent(&format!("/ --version/-v / --help/-h"), 15, line_length_max, true);
+    let usage_text = format!("Usage: aliesce {}\n{}", usage_opts_head, usage_opts_tail);
 
     /* generate flags text */
     let flags_list = cli_options.iter()

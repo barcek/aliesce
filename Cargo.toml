@@ -1,4 +1,9 @@
 [package]
 name = "aliesce"
-version = "1.21.2"
+version = "1.21.3"
 edition = "2021"
+description = "multilingual source file processor"
+keywords = ["multilingual", "single source", "scripting", "polyglot programming", "build management", "command line tool"]
+authors = ["barcek"]
+license = "MIT"
+repository = "https://github.com/barcek/aliesce/"

@@ -176,7 +176,7 @@ impl Script {
 
     let mut lines = text.lines();
     let line = lines.nth(0).unwrap().to_string();
-    let body = lines.skip(1).collect::<Vec<&str>>().join("\n");
+    let body = lines.collect::<Vec<&str>>().join("\n");
 
     Script { n, line, body }
   }
@@ -394,7 +394,7 @@ fn if_change_in_args_make_then_exit(source: &Source, config: &Config) {
     let source_scripts = source.scripts.iter()
       .map(|script| {
         let Script { n, line, body } = script;
-        format!("{}{}\n\n{}\n", config.defaults.get("tag_head").unwrap(), if arg_n == *n { format!(" {}", arg_line) } else { line.to_string() }, body)
+        format!("{}{}\n{}\n", config.defaults.get("tag_head").unwrap(), if arg_n == *n { format!(" {}", arg_line) } else { line.to_string() }, body)
       })
       .collect::<String>();
 

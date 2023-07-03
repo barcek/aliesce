@@ -65,8 +65,8 @@ fn cli_options_get(config: &Config) -> Vec<CLIOption> {
     CLIOption::new("only", "o", &["SUBSET"], "include only the scripts the numbers of which appear in SUBSET, comma-separated and/or as ranges, e.g. -o 1,3-5", &cli_option_only_apply),
     CLIOption::new("dest", "d", &["DIRNAME"], &*format!("set the default output dirname ('{}') to DIRNAME", config.defaults.get("path_dir").unwrap()), &cli_option_dest_apply),
     CLIOption::new("init", "i", &[], &*format!("add a source at the default path ('{}') then exit", config.defaults.get("path_src").unwrap()), &cli_option_init_apply),
-    CLIOption::new("push", "p", &["LINE", "PATH"], &*format!("append to SOURCE (def. '{}') LINE, auto-prefixed by the tag head, followed by the content at PATH then exit", config.defaults.get("path_src").unwrap()), &cli_option_push_apply),
-    CLIOption::new("edit", "e", &["N", "LINE"], &*format!("update the tag line for script number N to LINE, auto-prefixed by the tag head, then exit"), &cli_option_edit_apply),
+    CLIOption::new("push", "p", &["LINE", "PATH"], &*format!("append to SOURCE (def. '{}') LINE, adding the tag head if none, followed by the content at PATH then exit", config.defaults.get("path_src").unwrap()), &cli_option_push_apply),
+    CLIOption::new("edit", "e", &["N", "LINE"], &*format!("update the tag line for script number N to LINE, adding the tag head if none, then exit"), &cli_option_edit_apply),
     CLIOption::new_version(),
     CLIOption::new_help()
   ])

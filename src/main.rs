@@ -309,16 +309,20 @@ struct OutputFileInitCode {
 
 /* - utility functions, remaining */
 
+fn tag_head_add(line: &str, config: &Config) -> String {
+  let tag_head = config.defaults.get("tag_head").unwrap();
+  if line.len() >= 3 && line[..3] == **tag_head { line.to_string() } else { format!("{} {}", tag_head, line.trim()) }
+}
+
 fn script_push(config: &Config, strs: Vec<String>) {
 
   let script_filename = &strs[1];
-  let Config { defaults, receipts: _ } = config;
 
   /* handle read */
 
   let script = fs::read_to_string(script_filename)
     .unwrap_or_else(|err| error_handle((&format!("Not parsing script file '{}'", script_filename), Some("read"), Some(err))));
-  let tag_line = format!("{} {}", defaults.get("tag_head").unwrap(), strs[0]);
+  let tag_line = tag_head_add(&strs[0], &config);
   let script_plus_tag_line = format!("\n{}\n\n{}", tag_line, script);
 
   /* handle write */
@@ -389,12 +393,14 @@ fn if_change_in_args_make_then_exit(source: &Source, config: &Config) {
 
     let arg_n = args[0].parse::<usize>().expect("parse no. for option 'edit'");
     let arg_line = &args[1];
+    let arg_line_tagged = tag_head_add(arg_line, &config);
 
     /* update tag line and join whole */
     let source_scripts = source.scripts.iter()
       .map(|script| {
         let Script { n, line, body } = script;
-        format!("{}{}\n{}\n", config.defaults.get("tag_head").unwrap(), if arg_n == *n { format!(" {}", arg_line) } else { line.to_string() }, body)
+        let line_tagged = tag_head_add(line, &config);
+        format!("{}\n{}\n", if arg_n == *n { &arg_line_tagged } else { &line_tagged }, body)
       })
       .collect::<String>();
 
@@ -420,7 +426,7 @@ fn if_change_in_args_make_then_exit(source: &Source, config: &Config) {
     fs::remove_dir_all(&path_tmp_dir)
       .unwrap_or_else(|_| panic!("remove temporary directory '{}'", &path_tmp_dir));
 
-    println!("Updated tag line for script no. {} to '{} {}'", arg_n, config.defaults.get("tag_head").unwrap(), arg_line);
+    println!("Updated tag line for script no. {} to '{}'", arg_n, arg_line_tagged);
     process::exit(0);
   };
 }
@@ -838,7 +844,7 @@ mod test {
 
   /*   - end-to-end */
 
-  fn get_values_for_cli_options() -> [String; 10] {
+  fn get_values_for_cli_options() -> [String; 9] {
 
     let path_dir = String::from("./.test_temp");
 
@@ -854,14 +860,13 @@ mod test {
     let content_source = format!("{}{}{}", &content_source_preface, &content_source_script_line, &content_source_script_body);
 
     let content_script_line_untagged = format!(">/test_2.sh sh");
-    let content_script_line = format!("{} {}", DEFAULTS[3].1, &content_script_line_untagged);
+    let content_script_line_tagged = format!("{} {}", DEFAULTS[3].1, &content_script_line_untagged);
     let content_script_body = format!("echo \"Running 2\"\n");
-    let content_script = format!("{}\n\n{}", &content_script_line, &content_script_body);
 
     [
       path_dir, path_base_source, path_base_script,
       content_source_preface, content_source_script_body, content_source,
-      content_script_line_untagged, content_script_line, content_script_body, content_script
+      content_script_line_untagged, content_script_line_tagged, content_script_body
     ]
   }
 
@@ -873,7 +878,7 @@ mod test {
     let [
       path_dir, path_base_source, path_base_script,
       content_source_preface, content_source_script_body, content_source,
-      content_script_line_untagged, content_script_line, content_script_body, content_script
+      content_script_line_untagged, content_script_line_tagged, content_script_body
     ] = get_values_for_cli_options();
 
     /* setup - add temporary test directory w/ content */
@@ -886,14 +891,26 @@ mod test {
     /* acquisitions */
 
     /* - push option */
+
     let output_push_raw = process::Command::new("cargo").args(Vec::from(["run", "--", "-p", &content_script_line_untagged, &path_base_script, &path_base_source])).output().unwrap();
     let output_push = String::from_utf8_lossy(&output_push_raw.stdout);
     let source_push = fs::read_to_string(&path_base_source).unwrap_or_else(|_| panic!("reading from test source"));
+    let source_push_line = source_push.lines().nth(4).unwrap();
+
+    process::Command::new("cargo").args(Vec::from(["run", "--", "-p", &content_script_line_tagged, &path_base_script, &path_base_source])).output().unwrap();
+    let source_push_tagged = fs::read_to_string(&path_base_source).unwrap_or_else(|_| panic!("reading from test source"));
+    let source_push_tagged_line = source_push_tagged.lines().nth(4).unwrap();
 
     /* - edit option */
+
     let output_edit_raw = process::Command::new("cargo").args(Vec::from(["run", "--", "-e", &n_edit, &content_script_line_untagged, &path_base_source])).output().unwrap();
     let output_edit = String::from_utf8_lossy(&output_edit_raw.stdout);
     let source_edit = fs::read_to_string(&path_base_source).unwrap_or_else(|_| panic!("reading from test source"));
+    let source_edit_line = source_edit.lines().nth(1).unwrap();
+
+    process::Command::new("cargo").args(Vec::from(["run", "--", "-e", &n_edit, &content_script_line_tagged, &path_base_source])).output().unwrap();
+    let source_edit_tagged = fs::read_to_string(&path_base_source).unwrap_or_else(|_| panic!("reading from test source"));
+    let source_edit_tagged_line = source_edit_tagged.lines().nth(1).unwrap();
 
     /* teardown - remove temporary test directory */
     fs::remove_dir_all(&path_dir).unwrap_or_else(|_| panic!("remove temporary test directory '{}'", &path_dir));
@@ -901,16 +918,23 @@ mod test {
     /* assertions */
 
     /* - push option */
-    assert!(output_push.contains(&content_script_line));
+
+    assert!(output_push.contains(&content_script_line_tagged));
     assert!(output_push.contains(&path_base_script));
+
     assert!(source_push.contains(&content_source));
-    assert!(source_push.contains(&content_script));
+    assert_eq!(content_script_line_tagged, source_push_line);
+    assert_eq!(content_script_line_tagged, source_push_tagged_line);
+    assert!(source_push.contains(&content_script_body));
 
     /* - edit option */
+
     assert!(output_edit.contains(&n_edit));
-    assert!(output_edit.contains(&content_script_line));
+    assert!(output_edit.contains(&content_script_line_tagged));
+
     assert!(source_edit.contains(&content_source_preface));
-    assert!(source_edit.contains(&content_script_line_untagged));
+    assert_eq!(content_script_line_tagged, source_edit_line);
+    assert_eq!(content_script_line_tagged, source_edit_tagged_line);
     assert!(source_edit.contains(&content_source_script_body));
   }
 

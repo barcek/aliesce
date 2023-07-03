@@ -823,6 +823,7 @@ mod test {
 
   /* - imports */
 
+  use::std::fs;
   use::std::process;
   use::std::collections::HashMap;
   use super::{
@@ -836,6 +837,82 @@ mod test {
   /* - test cases */
 
   /*   - end-to-end */
+
+  fn get_values_for_cli_options() -> [String; 10] {
+
+    let path_dir = String::from("./.test_temp");
+
+    let base_source = String::from("source.txt");
+    let base_script = String::from("script.txt");
+
+    let path_base_source = format!("{}/{}", &path_dir, &base_source);
+    let path_base_script = format!("{}/{}", &path_dir, &base_script);
+
+    let content_source_preface = String::from("Test preface\n");
+    let content_source_script_line = format!("### sh sh\n");
+    let content_source_script_body = format!("echo \"Running 1\"\n");
+    let content_source = format!("{}{}{}", &content_source_preface, &content_source_script_line, &content_source_script_body);
+
+    let content_script_line_untagged = format!(">/test_2.sh sh");
+    let content_script_line = format!("{} {}", DEFAULTS[3].1, &content_script_line_untagged);
+    let content_script_body = format!("echo \"Running 2\"\n");
+    let content_script = format!("{}\n\n{}", &content_script_line, &content_script_body);
+
+    [
+      path_dir, path_base_source, path_base_script,
+      content_source_preface, content_source_script_body, content_source,
+      content_script_line_untagged, content_script_line, content_script_body, content_script
+    ]
+  }
+
+  /*     - CLI options: push, edit */
+
+  #[test]
+  fn cli_options_push_and_edit() {
+
+    let [
+      path_dir, path_base_source, path_base_script,
+      content_source_preface, content_source_script_body, content_source,
+      content_script_line_untagged, content_script_line, content_script_body, content_script
+    ] = get_values_for_cli_options();
+
+    /* setup - add temporary test directory w/ content */
+    fs::create_dir_all(&path_dir).unwrap_or_else(|_| panic!("create temporary test directory '{}'", &path_dir));
+    fs::write(&path_base_source, &content_source).unwrap_or_else(|_| panic!("write test source to '{}'", &path_base_source));
+    fs::write(&path_base_script, &content_script_body).unwrap_or_else(|_| panic!("write test script body to '{}'", &path_base_script));
+
+    let n_edit = "1";
+
+    /* acquisitions */
+
+    /* - push option */
+    let output_push_raw = process::Command::new("cargo").args(Vec::from(["run", "--", "-p", &content_script_line_untagged, &path_base_script, &path_base_source])).output().unwrap();
+    let output_push = String::from_utf8_lossy(&output_push_raw.stdout);
+    let source_push = fs::read_to_string(&path_base_source).unwrap_or_else(|_| panic!("reading from test source"));
+
+    /* - edit option */
+    let output_edit_raw = process::Command::new("cargo").args(Vec::from(["run", "--", "-e", &n_edit, &content_script_line_untagged, &path_base_source])).output().unwrap();
+    let output_edit = String::from_utf8_lossy(&output_edit_raw.stdout);
+    let source_edit = fs::read_to_string(&path_base_source).unwrap_or_else(|_| panic!("reading from test source"));
+
+    /* teardown - remove temporary test directory */
+    fs::remove_dir_all(&path_dir).unwrap_or_else(|_| panic!("remove temporary test directory '{}'", &path_dir));
+
+    /* assertions */
+
+    /* - push option */
+    assert!(output_push.contains(&content_script_line));
+    assert!(output_push.contains(&path_base_script));
+    assert!(source_push.contains(&content_source));
+    assert!(source_push.contains(&content_script));
+
+    /* - edit option */
+    assert!(output_edit.contains(&n_edit));
+    assert!(output_edit.contains(&content_script_line));
+    assert!(source_edit.contains(&content_source_preface));
+    assert!(source_edit.contains(&content_script_line_untagged));
+    assert!(source_edit.contains(&content_source_script_body));
+  }
 
   /*     - CLI option: version */
 

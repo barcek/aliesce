@@ -420,7 +420,7 @@ fn if_change_in_args_make_then_exit(source: &Source, config: &Config) {
     fs::remove_dir_all(&path_tmp_dir)
       .unwrap_or_else(|_| panic!("remove temporary directory '{}'", &path_tmp_dir));
 
-    println!("Updated tag line for script no. {} to '{}'", arg_n, arg_line);
+    println!("Updated tag line for script no. {} to '{} {}'", arg_n, config.defaults.get("tag_head").unwrap(), arg_line);
     process::exit(0);
   };
 }

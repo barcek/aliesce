@@ -13,7 +13,8 @@ Write, save and run scripts in multiple languages from a single source file.
     - [Labelling scripts](#labelling-scripts)
 - [Options](#options)
   - [Provision in-file](#provision-in-file)
-- [Piping](#piping)
+- [Streams](#streams)
+- [Defaults](#defaults)
 - [Getting started](#getting-started)
 - [Making changes](#making-changes)
   - [Tests](#tests)
@@ -133,8 +134,8 @@ The following can be passed to `aliesce` before any source file path:
 - `--dest` / `-d`  `DIRNAME`, to set the default output dirname ('scripts') to `DIRNAME`
 - `--list` / `-l`, to print for each script in the source (def. 'src.txt') its number and tag line content, without saving or running
 - `--only` / `-o`  `SUBSET`, to include only the scripts the numbers of which appear in `SUBSET`, comma-separated and/or as ranges, e.g. `-o 1,3-5`
-- `--push` / `-p`  `LINE` `PATH`, to append to the source (def. 'src.txt') `LINE`, auto-prefixed by the tag head, followed by the content at `PATH` then exit
-- `--edit` / `-e`  `N` `LINE`, to update the tag line for script number N to LINE, auto-prefixed by the tag head, then exit
+- `--push` / `-p`  `LINE` `PATH`, to append to the source (def. 'src.txt') `LINE`, adding the tag head if none, followed by the content at `PATH` then exit
+- `--edit` / `-e`  `N` `LINE`, to update the tag line for script number N to LINE, adding the tag head if none, then exit
 - `--init` / `-i`, to add a source at the default path ('src.txt') then exit
 - `--version` / `-v`, to show name and version number then exit
 - `--help` / `-h`, to show usage, flags available and notes then exit
@@ -149,13 +150,17 @@ Arguments passed directly on the command line are processed first, followed by t
 
 This is similar to the use of the source file directly via hashbang, described in [Getting started](#getting-started) below.
 
-## Piping
+## Streams
 
 One or more paths can be piped to `aliesce` to append the content at each to the source file as a script, auto-preceded by a tag line including the `!` signal, then exit.
 
-## Getting started
+## Defaults
 
-The default path, tag, signal, placeholder and command values are defined close to the top of the source file, i.e. 'src/main.rs', should you prefer to modify any pre-compilation.
+The default core path, tag, signal, placeholder and command values are defined close to the top of the project source file, i.e. 'src/main.rs', should you prefer to modify any pre-compilation (see [Getting started](#getting-started) below).
+
+The default temporary test directory is defined close to the top of the test module, also in the project source file.
+
+## Getting started
 
 With Rust and Cargo installed, at the root of the aliesce directory run `cargo build --release` to compile. The binary is created in the 'target/release' directory.
 
@@ -174,6 +179,8 @@ The tests can be run with the following command:
 ```
 cargo test
 ```
+
+For the purpose of testing a subset of CLI options a temporary test directory is created (see [Defaults](#defaults) above).
 
 The tests themselves are in the test module at the base of the file.
 

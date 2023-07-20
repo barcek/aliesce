@@ -2,6 +2,8 @@
 
 Write, save and run scripts in multiple languages from a single source file.
 
+Allows for a granular one-run project generation and transformation.
+
 - [Why?](#why)
 - [How?](#how)
   - [Source file setup](#source-file-setup)
@@ -22,7 +24,7 @@ Write, save and run scripts in multiple languages from a single source file.
 
 ## Why?
 
-For smoother development of related code, to keep the source about as closely collocated as possible, or for practice, for a more direct absorption of syntax and idiom.
+For smoother development of related code, to keep the source about as closely collocated as possible, or for coding practice in parallel, for a more direct absorption of syntax and idiom.
 
 ## How?
 
@@ -32,22 +34,22 @@ By providing a simple tag line above each script containing values to be used in
 
 Create a file for your scripts. Give it any name, and any extension or none. Use the current default name - 'src.txt' - to avoid passing an argument later.
 
-Add the scripts to the file.
-
-Immediately above each script, insert a tag line starting by default with `###`. Include in the tag line the following elements:
+Add the scripts to the file. Immediately above each script, insert a tag line starting by default with `###`. Include in the tag line the following elements:
 
 - the file extension for that language, or the full output filename including extension, or the full output path including directory and extension
 - the command to be run, if any, e.g. the program to be used to run the file and any arguments to pass to that program - the path to the file is added as the final argument by default
 
 Ensure each element is separated by one or more spaces.
 
-For example, a possible tag line for a script in Elixir:
+For example, a possible tag line and script in Elixir:
 
 ```
 ### exs elixir -r setup
+
+IO.puts("Up and running...")
 ```
 
-This tells aliesce to save the script following the tag line in a file with the `exs` extension, then run that file with the `elixir` command, applying one option, to require a file named 'setup'.
+This tells aliesce to save the script below the tag line in a file with the `exs` extension, then run that file with the `elixir` command, applying one option, to require a file named 'setup'.
 
 A template source file can be created and scripts written in other files appended to an existing file via the command line (see [Options](#options) below).
 
@@ -176,11 +178,11 @@ Running the tests after making changes and adding tests to cover new behaviour i
 
 The tests can be run with the following command:
 
-```
-cargo test
+```shell
+cargo test -- --test-threads=1
 ```
 
-For the purpose of testing a subset of CLI options a temporary test directory is created (see [Defaults](#defaults) above).
+For the purpose of testing a subset of CLI options a temporary test directory is created (see [Defaults](#defaults) above). The flag setting thread count ensures that the test cases are run in series, allowing for setup and teardown.
 
 The tests themselves are in the test module at the base of the file.
 

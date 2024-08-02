@@ -832,6 +832,7 @@ mod test {
 
   /* - imports */
 
+  use::std::io::Write;
   use::std::fs;
   use::std::process;
   use::std::collections::HashMap;
@@ -851,36 +852,43 @@ mod test {
 
   /*   - end-to-end */
 
-  /*     - functions: CLI options */
+  /*     - functions: stdin read, CLI options */
 
-  fn get_values_for_cli_options() -> [String; 9] {
+  fn test_values_script_get(path_dir: &String, n: u8) -> (String, String) {
+    (
+      format!("{path_dir}/script_{n}.txt"),
+      format!("echo \"Running {n}\"\n")
+    )
+  }
+
+  fn test_values_end_to_end_get() -> [String; 14] {
 
     let path_dir = String::from(PATH_TMP_DIR_TEST);
+    let path_source = format!("{}/source.txt", &path_dir);
 
-    let base_source = String::from("source.txt");
-    let base_script = String::from("script.txt");
-
-    let path_base_source = format!("{}/{}", &path_dir, &base_source);
-    let path_base_script = format!("{}/{}", &path_dir, &base_script);
+    let (path_script_1, content_script_body_1) = test_values_script_get(&path_dir, 1);
+    let (path_script_2, content_script_body_2) = test_values_script_get(&path_dir, 2);
+    let (path_script_3, content_script_body_3) = test_values_script_get(&path_dir, 3);
 
     let content_source_preface = String::from("Test preface\n");
     let content_source_script_line = format!("### sh sh\n");
-    let content_source_script_body = format!("echo \"Running 1\"\n");
+    let content_source_script_body = format!("echo \"Running initial\"\n");
     let content_source = format!("{}{}{}", &content_source_preface, &content_source_script_line, &content_source_script_body);
 
-    let content_script_line_untagged = format!(">/test_2.sh sh");
+    let content_script_line_untagged = format!(">/test.sh sh");
     let content_script_line_tagged = format!("{} {}", DEFAULTS[3].1, &content_script_line_untagged);
-    let content_script_body = format!("echo \"Running 2\"\n");
+    let content_script_line_tagged_bypass = format!("{} {}", DEFAULTS[3].1, DEFAULTS[5].1);
 
     [
-      path_dir, path_base_source, path_base_script,
+      path_dir, path_source, path_script_1, path_script_2, path_script_3,
       content_source_preface, content_source_script_body, content_source,
-      content_script_line_untagged, content_script_line_tagged, content_script_body
+      content_script_line_untagged, content_script_line_tagged, content_script_line_tagged_bypass,
+      content_script_body_1, content_script_body_2, content_script_body_3
     ]
   }
 
   fn test_tree_create(files: Vec<[&str; 3]>) {
-    let path_dir = &get_values_for_cli_options()[0];
+    let path_dir = &test_values_end_to_end_get()[0];
     fs::create_dir_all(&path_dir).unwrap_or_else(|_| panic!("create temporary test directory '{}'", &path_dir));
     for file in files {
       let [path_file, content_file, description] = file;
@@ -889,8 +897,76 @@ mod test {
   }
 
   fn test_tree_remove() {
-    let path_dir = &get_values_for_cli_options()[0];
+    let path_dir = &test_values_end_to_end_get()[0];
     fs::remove_dir_all(&path_dir).unwrap_or_else(|_| panic!("remove temporary test directory '{}'", &path_dir));
+  }
+
+  /*     - stdin read */
+
+  fn test_stdin_read_run(input_delimiter: &str) -> () {
+
+    let [
+      _, path_source, path_script_1, path_script_2, path_script_3,
+      _, _, content_source,
+      _, _, content_script_line_tagged_bypass,
+      content_script_body_1, content_script_body_2, content_script_body_3
+    ] = test_values_end_to_end_get();
+
+    /* setup - add temporary test directory w/ content */
+    test_tree_create(Vec::from([
+      [&path_source,   &content_source,        "test source"       ],
+      [&path_script_1, &content_script_body_1, "test script 1 body"],
+      [&path_script_2, &content_script_body_2, "test script 2 body"],
+      [&path_script_3, &content_script_body_3, "test script 3 body"]
+    ]));
+
+    /* acquisitions */
+
+    let mut proc = process::Command::new("cargo")
+      .args(Vec::from(["run", "--", &path_source]))
+      .stdin(process::Stdio::piped())
+      .stdout(process::Stdio::piped())
+      .stderr(process::Stdio::piped())
+      .spawn()
+      .unwrap();
+
+    let input = format!("{}{d}{}{d}{}", path_script_1, path_script_2, path_script_3, d = input_delimiter);
+
+    proc.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+    let output_raw = proc.wait_with_output().unwrap();
+
+    let output = String::from_utf8_lossy(&output_raw.stdout);
+    let source = fs::read_to_string(&path_source).unwrap_or_else(|_| panic!("reading from test source"));
+    let source_line_1 = source.lines().nth( 4).unwrap();
+    let source_line_2 = source.lines().nth( 8).unwrap();
+    let source_line_3 = source.lines().nth(12).unwrap();
+
+    test_tree_remove();
+
+    /* assertions */
+
+    assert!(output.contains(&content_script_line_tagged_bypass));
+    assert!(output.contains(&path_script_1));
+    assert!(output.contains(&path_script_2));
+    assert!(output.contains(&path_script_3));
+
+    assert!(source.contains(&content_source));
+    assert_eq!(content_script_line_tagged_bypass, source_line_1);
+    assert_eq!(content_script_line_tagged_bypass, source_line_2);
+    assert_eq!(content_script_line_tagged_bypass, source_line_3);
+    assert!(source.contains(&content_script_body_1));
+    assert!(source.contains(&content_script_body_2));
+    assert!(source.contains(&content_script_body_3));
+  }
+
+  #[test]
+  fn stdin_read() {
+
+    let input_delimiter_1 = " ";
+    let input_delimiter_2 = "\n";
+
+    test_stdin_read_run(input_delimiter_1);
+    test_stdin_read_run(input_delimiter_2);
   }
 
   /*     - CLI options: push, edit */
@@ -899,26 +975,27 @@ mod test {
   fn cli_options_push() {
 
     let [
-      _, path_base_source, path_base_script,
+      _, path_source, path_script, _, _,
       _, _, content_source,
-      content_script_line_untagged, content_script_line_tagged, content_script_body
-    ] = get_values_for_cli_options();
+      content_script_line_untagged, content_script_line_tagged, _,
+      content_script_body, _, _
+    ] = test_values_end_to_end_get();
 
     /* setup - add temporary test directory w/ content */
     test_tree_create(Vec::from([
-      [&path_base_source, &content_source,      "test source"     ],
-      [&path_base_script, &content_script_body, "test script body"]
+      [&path_source, &content_source,      "test source"     ],
+      [&path_script, &content_script_body, "test script body"]
     ]));
 
     /* acquisitions */
 
-    let output_push_raw = process::Command::new("cargo").args(Vec::from(["run", "--", "-p", &content_script_line_untagged, &path_base_script, &path_base_source])).output().unwrap();
+    let output_push_raw = process::Command::new("cargo").args(Vec::from(["run", "--", "-p", &content_script_line_untagged, &path_script, &path_source])).output().unwrap();
     let output_push = String::from_utf8_lossy(&output_push_raw.stdout);
-    let source_push = fs::read_to_string(&path_base_source).unwrap_or_else(|_| panic!("reading from test source"));
+    let source_push = fs::read_to_string(&path_source).unwrap_or_else(|_| panic!("reading from test source"));
     let source_push_line = source_push.lines().nth(4).unwrap();
 
-    process::Command::new("cargo").args(Vec::from(["run", "--", "-p", &content_script_line_tagged, &path_base_script, &path_base_source])).output().unwrap();
-    let source_push_tagged = fs::read_to_string(&path_base_source).unwrap_or_else(|_| panic!("reading from test source"));
+    process::Command::new("cargo").args(Vec::from(["run", "--", "-p", &content_script_line_tagged, &path_script, &path_source])).output().unwrap();
+    let source_push_tagged = fs::read_to_string(&path_source).unwrap_or_else(|_| panic!("reading from test source"));
     let source_push_tagged_line = source_push_tagged.lines().nth(4).unwrap();
 
     test_tree_remove();
@@ -926,7 +1003,7 @@ mod test {
     /* assertions */
 
     assert!(output_push.contains(&content_script_line_tagged));
-    assert!(output_push.contains(&path_base_script));
+    assert!(output_push.contains(&path_script));
 
     assert!(source_push.contains(&content_source));
     assert_eq!(content_script_line_tagged, source_push_line);
@@ -938,27 +1015,28 @@ mod test {
   fn cli_options_edit() {
 
     let [
-      _, path_base_source, _,
+      _, path_source, _, _, _,
       content_source_preface, content_source_script_body, content_source,
-      content_script_line_untagged, content_script_line_tagged, _
-    ] = get_values_for_cli_options();
+      content_script_line_untagged, content_script_line_tagged, _,
+      _, _, _
+    ] = test_values_end_to_end_get();
 
     /* setup - add temporary test directory w/ content */
     test_tree_create(Vec::from([
-      [&path_base_source, &content_source, "test source"]
+      [&path_source, &content_source, "test source"]
     ]));
 
     let n_edit = "1";
 
     /* acquisitions */
 
-    let output_edit_raw = process::Command::new("cargo").args(Vec::from(["run", "--", "-e", &n_edit, &content_script_line_untagged, &path_base_source])).output().unwrap();
+    let output_edit_raw = process::Command::new("cargo").args(Vec::from(["run", "--", "-e", &n_edit, &content_script_line_untagged, &path_source])).output().unwrap();
     let output_edit = String::from_utf8_lossy(&output_edit_raw.stdout);
-    let source_edit = fs::read_to_string(&path_base_source).unwrap_or_else(|_| panic!("reading from test source"));
+    let source_edit = fs::read_to_string(&path_source).unwrap_or_else(|_| panic!("reading from test source"));
     let source_edit_line = source_edit.lines().nth(1).unwrap();
 
-    process::Command::new("cargo").args(Vec::from(["run", "--", "-e", &n_edit, &content_script_line_tagged, &path_base_source])).output().unwrap();
-    let source_edit_tagged = fs::read_to_string(&path_base_source).unwrap_or_else(|_| panic!("reading from test source"));
+    process::Command::new("cargo").args(Vec::from(["run", "--", "-e", &n_edit, &content_script_line_tagged, &path_source])).output().unwrap();
+    let source_edit_tagged = fs::read_to_string(&path_source).unwrap_or_else(|_| panic!("reading from test source"));
     let source_edit_tagged_line = source_edit_tagged.lines().nth(1).unwrap();
 
     test_tree_remove();
@@ -1031,7 +1109,7 @@ mod test {
 
   /*     - function: inputs_parse */
 
-  fn get_values_for_inputs_parse() -> (Config<'static>, String, usize, String, OutputFilePath, OutputFileInit) {
+  fn test_values_inputs_parse_get() -> (Config<'static>, String, usize, String, OutputFilePath, OutputFileInit) {
 
     let config_default = Config {
       defaults: HashMap::from(DEFAULTS),
@@ -1062,7 +1140,7 @@ mod test {
   #[test]
   fn inputs_parse_returns_for_tag_data_full_some_output() {
 
-    let (config_default, body, n, code, path, init) = get_values_for_inputs_parse();
+    let (config_default, body, n, code, path, init) = test_values_inputs_parse_get();
 
     let line = " ext program --flag value\n".to_string();
     let data = Vec::from(["ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
@@ -1076,7 +1154,7 @@ mod test {
   #[test]
   fn inputs_parse_returns_for_tag_label_and_data_full_some_output_file() {
 
-    let (config_default, body, n, code, path, init) = get_values_for_inputs_parse();
+    let (config_default, body, n, code, path, init) = test_values_inputs_parse_get();
 
     let line = " label # ext program --flag value\n".to_string();
     let data = Vec::from(["ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
@@ -1090,7 +1168,7 @@ mod test {
   #[test]
   fn inputs_parse_returns_for_dest_option_some_output_file() {
 
-    let (mut config_default, body, n, code, _, mut init) = get_values_for_inputs_parse();
+    let (mut config_default, body, n, code, _, mut init) = test_values_inputs_parse_get();
 
     let line = " ext program --flag value\n".to_string();
     let data = Vec::from(["ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
@@ -1112,7 +1190,7 @@ mod test {
   #[test]
   fn inputs_parse_returns_for_list_option_some_output_text() {
 
-    let (mut config_default, body, n, _, _, _) = get_values_for_inputs_parse();
+    let (mut config_default, body, n, _, _, _) = test_values_inputs_parse_get();
 
     let line = " ext program --flag value\n".to_string();
 
@@ -1127,7 +1205,7 @@ mod test {
   #[test]
   fn inputs_parse_returns_for_tag_data_full_incl_singlepart_output_stem_some_output_file() {
 
-    let (config_default, body, n, code, _, mut init) = get_values_for_inputs_parse();
+    let (config_default, body, n, code, _, mut init) = test_values_inputs_parse_get();
 
     let line = " script.ext program --flag value\n".to_string();
     let data = Vec::from(["script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
@@ -1148,7 +1226,7 @@ mod test {
   #[test]
   fn inputs_parse_returns_for_tag_data_full_incl_multipart_output_stem_some_output_file() {
 
-    let (config_default, body, n, code, _, mut init) = get_values_for_inputs_parse();
+    let (config_default, body, n, code, _, mut init) = test_values_inputs_parse_get();
 
     let line = " script.suffix1.suffix2.ext program --flag value\n".to_string();
     let data = Vec::from(["script.suffix1.suffix2.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
@@ -1169,7 +1247,7 @@ mod test {
   #[test]
   fn inputs_parse_returns_for_tag_data_full_incl_output_dir_some_output_file() {
 
-    let (config_default, body, n, code, _, mut init) = get_values_for_inputs_parse();
+    let (config_default, body, n, code, _, mut init) = test_values_inputs_parse_get();
 
     let line = " dir/script.ext program --flag value\n".to_string();
     let data = Vec::from(["dir/script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
@@ -1190,7 +1268,7 @@ mod test {
   #[test]
   fn inputs_parse_returns_for_tag_data_full_incl_output_path_dir_placeholder_some_output_file() {
 
-    let (config_default, body, n, code, _, mut init) = get_values_for_inputs_parse();
+    let (config_default, body, n, code, _, mut init) = test_values_inputs_parse_get();
 
     let line = " >/script.ext program --flag value\n".to_string();
     let data = Vec::from([">/script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
@@ -1211,7 +1289,7 @@ mod test {
   #[test]
   fn inputs_parse_returns_for_tag_data_full_incl_output_path_all_placeholder_some_output() {
 
-    let (config_default, body, n, code, path, _) = get_values_for_inputs_parse();
+    let (config_default, body, n, code, path, _) = test_values_inputs_parse_get();
 
     let line = " ext program_1 --flag value >< | program_2\n".to_string();
     let data = Vec::from(["ext".to_string(), "program_1".to_string(), "--flag".to_string(), "value".to_string(), "><".to_string(), "|".to_string(), "program_2".to_string()]);
@@ -1230,7 +1308,7 @@ mod test {
   #[test]
   fn inputs_parse_returns_for_tag_data_minus_cmd_some_output_file_indicating() {
 
-    let (config_default, body, n, code, path, _) = get_values_for_inputs_parse();
+    let (config_default, body, n, code, path, _) = test_values_inputs_parse_get();
 
     let line = " ext\n".to_string();
     let data = Vec::from(["ext".to_string()]);
@@ -1246,7 +1324,7 @@ mod test {
   #[test]
   fn inputs_parse_returns_for_tag_data_full_with_bypass_some_output_text() {
 
-    let (config_default, body, n, _, _, _) = get_values_for_inputs_parse();
+    let (config_default, body, n, _, _, _) = test_values_inputs_parse_get();
 
     let line = " ! ext program --flag value\n".to_string();
 
@@ -1259,7 +1337,7 @@ mod test {
   #[test]
   fn inputs_parse_returns_for_tag_data_absent_some_output_text() {
 
-    let (config_default, body, n, _, _, _) = get_values_for_inputs_parse();
+    let (config_default, body, n, _, _, _) = test_values_inputs_parse_get();
 
     let line = "\n".to_string();
 

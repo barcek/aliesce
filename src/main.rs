@@ -360,20 +360,36 @@ fn if_paths_on_stdin_push_then_exit(config: &Config) {
   use io::Read;
   let (tx, rx) = mpsc::channel();
 
-  /* spawn thread for blocking read and send string */
+  /* spawn thread for blocking read and send bytes */
   thread::spawn(move || {
     let mut stdin = io::stdin();
-    let mut bfr = String::new();
-    stdin.read_to_string(&mut bfr).unwrap();
-    tx.send(bfr).unwrap();
+    let mut bfr;
+    loop {
+      bfr = [0; 512];
+      match stdin.read(&mut bfr) {
+        Ok(0)  => break,
+        Ok(_)  => tx.send(bfr).unwrap(),
+        Err(e) => {
+          format!("Failed (read error: '{}')", e);
+          process::exit(1);
+        }
+      }
+    }
   });
-  thread::sleep(Duration::from_millis(25));
+  thread::sleep(Duration::from_millis(5));
 
-  /* process lines in string received to paths */
-  let paths = match rx.try_recv() {
-    Ok(recvd) => recvd.split_whitespace().map(|str| str.to_string()).filter(|str| !str.is_empty()).collect::<Vec<String>>(),
-    Err(_)    => Vec::new()
-  };
+  /* receive bytes and build string */
+  let mut recvd = String::new();
+  loop {
+    thread::sleep(Duration::from_micros(25));
+    match rx.try_recv() {
+      Ok(b)  => recvd.push_str(&String::from_utf8(b.to_vec()).unwrap()),
+      Err(_) => break
+    };
+  }
+
+  /* process lines in string to paths */
+  let paths = recvd.trim_end_matches("\0").split_whitespace().map(|str| str.to_string()).filter(|str| !str.is_empty()).collect::<Vec<String>>();
 
   /* handle script pushes for any paths */
   if !paths.is_empty() {

@@ -35,17 +35,17 @@
 
 /* - imports */
 
-use std::io;
+use std::io::{self, Read, Write};
 use std::thread;
 use std::sync::mpsc;
-use std::time::{ Duration, SystemTime };
+use std::time::{Duration, SystemTime};
 use std::env;
 use std::path::Path;
 use std::fs;
 use std::process;
 use std::collections::HashMap;
 
-use crate::args::{ CLIOption, config_update };
+use crate::args::{CLIOption, config_update};
 
 /* - SETTINGS, incl. DEFAULTS, CLI OPTIONS */
 
@@ -63,13 +63,51 @@ static DEFAULTS: [(&str, &str); 10] = [
 ];
 
 fn cli_options_get(config: &Config) -> Vec<CLIOption> {
+
   Vec::from([
-    CLIOption::new("list", "l", &[], &*format!("print for each script in SOURCE (def. '{}') its number and tag line content, without saving or running", config.defaults.get("path_src").unwrap()), &cli_option_list_apply),
-    CLIOption::new("only", "o", &["SUBSET"], "include only the scripts the numbers of which appear in SUBSET, comma-separated and/or as ranges, e.g. -o 1,3-5", &cli_option_only_apply),
-    CLIOption::new("dest", "d", &["DIRNAME"], &*format!("set the default output dirname ('{}') to DIRNAME", config.defaults.get("path_dir").unwrap()), &cli_option_dest_apply),
-    CLIOption::new("init", "i", &[], &*format!("add a source at the default path ('{}') then exit", config.defaults.get("path_src").unwrap()), &cli_option_init_apply),
-    CLIOption::new("push", "p", &["LINE", "PATH"], &*format!("append to SOURCE (def. '{}') LINE, adding the tag head if none, followed by the content at PATH then exit", config.defaults.get("path_src").unwrap()), &cli_option_push_apply),
-    CLIOption::new("edit", "e", &["N", "LINE"], &*format!("update the tag line for script number N to LINE, adding the tag head if none, then exit"), &cli_option_edit_apply),
+
+    CLIOption::new(
+      "list", "l", &[],
+      &format!(
+        "print for each script in SOURCE (def. '{}') its number and tag line content, without saving or running",
+        config.defaults.get("path_src").unwrap()
+      ),
+      &cli_option_list_apply
+    ),
+    CLIOption::new(
+      "only", "o", &["SUBSET"],
+      "include only the scripts the numbers of which appear in SUBSET, comma-separated and/or as ranges, e.g. -o 1,3-5",
+      &cli_option_only_apply
+    ),
+    CLIOption::new(
+      "dest", "d", &["DIRNAME"],
+      &format!(
+        "set the default output dirname ('{}') to DIRNAME",
+        config.defaults.get("path_dir").unwrap()
+      ),
+      &cli_option_dest_apply
+    ),
+    CLIOption::new(
+      "init", "i", &[],
+      &format!(
+        "add a source at the default path ('{}') then exit",
+        config.defaults.get("path_src").unwrap()
+      ),
+      &cli_option_init_apply
+    ),
+    CLIOption::new(
+      "push", "p", &["LINE", "PATH"],
+      &format!(
+        "append to SOURCE (def. '{}') LINE, adding the tag head if none, followed by the content at PATH then exit",
+        config.defaults.get("path_src").unwrap()
+      ),
+      &cli_option_push_apply
+    ),
+    CLIOption::new(
+      "edit", "e", &["N", "LINE"],
+      "update the tag line for script number N to LINE, adding the tag head if none, then exit",
+      &cli_option_edit_apply
+    ),
     CLIOption::new_version(),
     CLIOption::new_help()
   ])
@@ -79,26 +117,52 @@ fn cli_options_get(config: &Config) -> Vec<CLIOption> {
 
 fn doc_lines_get(config: &Config) -> [String; 5] {
 
-  let file = format!("The default source path is '{}'. Each script in the file is preceded by a tag line begun with the tag head ('{}') and an optional label and tail ('{}'):", config.defaults.get("path_src").unwrap(), config.defaults.get("tag_head").unwrap(), config.defaults.get("tag_tail").unwrap());
-  let line = format!("{}[ label {}] <OUTPUT EXTENSION / PATH: [[[.../]dirname/]stem.]ext> <COMMAND>", config.defaults.get("tag_head").unwrap(), config.defaults.get("tag_tail").unwrap());
+  let file = format!(
+    "The default source path is '{}'. Each script in the file is preceded by a tag line begun with the tag head ('{}') and an optional label and tail ('{}'):",
+    config.defaults.get("path_src").unwrap(),
+    config.defaults.get("tag_head").unwrap(),
+    config.defaults.get("tag_tail").unwrap()
+  );
+  let line = format!(
+    "{}[ label {}] <OUTPUT EXTENSION / PATH: [[[.../]dirname/]stem.]ext> <COMMAND>",
+    config.defaults.get("tag_head").unwrap(),
+    config.defaults.get("tag_tail").unwrap()
+  );
+  let main = format!(
+    "Each script is saved with the default output directory ('{}'), source file stem and OUTPUT EXTENSION, or a PATH overriding stem and/or directory, then the COMMAND is run with the save path appended. The '{}' placeholder can be used in the COMMAND to override path position and have the COMMAND passed to '{} {}'; where a script no. is included ('{}') the save path of that script is applied.",
+    config.defaults.get("path_dir").unwrap(),
+    config.defaults.get("plc_path_all").unwrap().replace("{}", ""),
+    config.defaults.get("cmd_prog").unwrap(),
+    config.defaults.get("cmd_flag").unwrap(),
+    config.defaults.get("plc_path_all").unwrap().replace("{}", "n")
+  );
+  let plus = format!(
+    "The '{}' signal can be used before the EXTENSION etc. to avoid both the save and run stages, or before the COMMAND to avoid run only. The '{}' placeholder can be used in a full PATH to denote the default or overridden output directory name.",
+    config.defaults.get("sig_stop").unwrap(),
+    config.defaults.get("plc_path_dir").unwrap()
+  );
+  let pipe = format!(
+    "One or more file paths can be piped to aliesce to append the content at each to the source as a script, auto-preceded by a tag line with a base '{}', then exit.",
+    config.defaults.get("sig_stop").unwrap()
+  );
 
-  let data_main = format!("Each script is saved with the default output directory ('{}'), source file stem and OUTPUT EXTENSION, or a PATH overriding stem and/or directory, then the COMMAND is run with the save path appended. The '{}' placeholder can be used in the COMMAND to override path position and have the COMMAND passed to '{} {}'; where a script no. is included ('{}') the save path of that script is applied.", config.defaults.get("path_dir").unwrap(), config.defaults.get("plc_path_all").unwrap().replace("{}", ""), config.defaults.get("cmd_prog").unwrap(), config.defaults.get("cmd_flag").unwrap(), config.defaults.get("plc_path_all").unwrap().replace("{}", "n"));
-  let data_plus = format!("The '{}' signal can be used before the EXTENSION etc. to avoid both the save and run stages, or before the COMMAND to avoid run only. The '{}' placeholder can be used in a full PATH to denote the default or overridden output directory name.", config.defaults.get("sig_stop").unwrap(), config.defaults.get("plc_path_dir").unwrap());
-
-  let pipe = format!("One or more file paths can be piped to aliesce to append the content at each to the source as a script, auto-preceded by a tag line with a base '{}', then exit.", config.defaults.get("sig_stop").unwrap());
-
-  [file, line, data_main, data_plus, pipe]
+  [file, line, main, plus, pipe]
 }
 
 fn main() {
 
   /* INITIAL SETUP */
 
-  let config_init = Config { defaults: HashMap::from(DEFAULTS), receipts: HashMap::new() };
+  let config_init = Config {
+    defaults: HashMap::from(DEFAULTS),
+    receipts: HashMap::new()
+  };
   let cli_options = cli_options_get(&config_init);
 
   /* update config for args passed to command */
-  let args_on_cli = env::args().skip(1).collect::<Vec<String>>();
+  let args_on_cli = env::args()
+    .skip(1)
+    .collect::<Vec<_>>();
   let config_base = config_update(config_init, &cli_options, &args_remaining_cli_apply, args_on_cli);
 
   /* SOURCE APPEND VIA STDIN */
@@ -110,7 +174,11 @@ fn main() {
   let source = source_get(&config_base);
 
   /* update config for args passed in source */
-  let args_in_src = source.preface.split_whitespace().map(|part| part.trim().to_string()).filter(|part| !part.is_empty()).collect::<Vec<String>>();
+  let args_in_src = source.preface
+    .split_whitespace()
+    .map(|part| part.trim().to_string())
+    .filter(|part| !part.is_empty())
+    .collect::<Vec<_>>();
   let config_full = config_update(config_base, &cli_options, &args_remaining_src_apply, args_in_src);
 
   if_change_in_args_make_then_exit(&source, &config_full);
@@ -120,8 +188,9 @@ fn main() {
   let context = context_get(&outputs);
 
   /* print output if text or process if file */
-  outputs.iter()
-    .for_each(|output| { output_apply(output, &context) })
+  outputs
+    .iter()
+    .for_each(|o| output_apply(o, &context))
 }
 
 /* - data structures */
@@ -141,7 +210,7 @@ impl Config<'_> {
         return val_strs.get(0).unwrap().to_string();
       }
     }
-    String::from(self.defaults.get("path_src").unwrap().to_owned())
+    String::from(*self.defaults.get("path_src").unwrap())
   }
   /* handle option - dest - alternative output directory name */
   fn get_path_dir(&self) -> String {
@@ -150,7 +219,7 @@ impl Config<'_> {
         return val_strs.get(0).unwrap().to_string();
       }
     }
-    String::from(self.defaults.get("path_dir").unwrap().to_owned())
+    String::from(*self.defaults.get("path_dir").unwrap())
   }
 }
 
@@ -179,7 +248,9 @@ impl Script {
 
     let mut lines = text.lines();
     let line = lines.nth(0).unwrap().to_string();
-    let body = lines.collect::<Vec<&str>>().join("\n");
+    let body = lines
+      .collect::<Vec<_>>()
+      .join("\n");
 
     Script { n, line, body }
   }
@@ -203,7 +274,7 @@ struct OutputFile {
   code: String,
   path: OutputFilePath,
   init: OutputFileInit,
-  n: usize
+  n:    usize
 }
 
 impl OutputFile {
@@ -214,22 +285,42 @@ impl OutputFile {
     /* set output path parts */
 
     /* get output path parts - break first data item on '/' */
-    let mut parts_path = data.get(0).unwrap().split('/').collect::<Vec<&str>>();
+    let mut parts_path = data.get(0).unwrap()
+      .split('/')
+      .collect::<Vec<_>>();
     let path_dir = config.get_path_dir();
 
     /* handle output directory identified by directory placeholder */
     if defaults.get("plc_path_dir").unwrap() == &parts_path[0] { parts_path[0] = path_dir.as_str() };
 
     /* get output filename parts - separate last output path part and break on '.' */
-    let parts_filename = parts_path.split_off(parts_path.len() - 1).last().unwrap().split('.').collect::<Vec<&str>>();
+    let parts_filename = parts_path
+      .split_off(parts_path.len() - 1)
+      .last()
+      .unwrap()
+      .split('.')
+      .collect::<Vec<_>>();
     let p_f_len = parts_filename.len();
 
     /* set as dir either remaining output path parts recombined or directory name,
            as stem either all but last output filename part or src stem, and
            as ext last output filename part */
     let dir = if !parts_path.is_empty() { parts_path.join("/") } else { path_dir.to_string() };
-    let stem = if p_f_len > 1 { parts_filename[..(p_f_len - 1)].join(".") } else { config.get_path_src().split('.').nth(0).unwrap().to_string() };
-    let ext = parts_filename.iter().last().unwrap().to_string();
+    let stem = if p_f_len > 1 {
+      parts_filename[..(p_f_len - 1)]
+        .join(".")
+    } else {
+      config.get_path_src()
+        .split('.')
+        .nth(0)
+        .unwrap()
+        .to_string()
+    };
+    let ext = parts_filename
+      .iter()
+      .last()
+      .unwrap()
+      .to_string();
 
     let path = OutputFilePath{ dir, stem, ext };
 
@@ -237,11 +328,19 @@ impl OutputFile {
 
     /* handle file run precluded */
     if data.len() == 1 {
-      let init = OutputFileInit::Text(OutputText::Stderr(format!("Not running file no. {} (no values)", n)));
+      let init = OutputFileInit::Text(
+        OutputText::Stderr(
+          format!("Not running file no. {n} (no values)")
+        )
+      );
       return OutputFile { data, code, path, init, n };
     }
     if data.get(1).unwrap() == defaults.get("sig_stop").unwrap() {
-      let init = OutputFileInit::Text(OutputText::Stderr(format!("Not running file no. {} ({} applied)", n, defaults.get("sig_stop").unwrap())));
+      let init = OutputFileInit::Text(
+        OutputText::Stderr(
+          format!("Not running file no. {n} ({} applied)", defaults.get("sig_stop").unwrap())
+        )
+      );
       return OutputFile { data, code, path, init, n };
     }
 
@@ -251,31 +350,61 @@ impl OutputFile {
     let plc_tail = parts_placeholder.next().unwrap();
     let plc_full = Vec::from([plc_head, plc_tail]).join("");
 
-    let plcs = data.iter().skip(1).map(|item| {
-      /* handle request for current script output path */
-      if item.contains(&plc_full) { return (0, plc_full.to_owned()) };
-      let head_i = if let Some(i) = item.find(plc_head) { i as i8 } else { -1 };
-      let tail_i = if let Some(i) = item.find(plc_tail) { i as i8 } else { -1 };
-      /* handle request for another script output path */
-      if -1 != head_i && -1 != tail_i && head_i < tail_i {
-         let s = item.chars().skip(head_i as usize).take((tail_i - head_i + 1) as usize).collect::<String>();
-         let i = s.chars().skip(plc_head.len()).take(s.len() - plc_full.len()).collect::<String>().parse::<i8>().unwrap();
-         return (i, s)
-      };
-      /* handle no request - value to be filtered out */
-      (-1, String::new())
-    }).filter(|item| -1 != item.0).collect::<Vec<(i8, String)>>();
+    let plcs = data
+      .iter()
+      .skip(1)
+      .map(|item| {
+        /* handle request for current script output path */
+        if item.contains(&plc_full) { return (0, plc_full.to_owned()) };
+        let head_i = if let Some(i) = item.find(plc_head) { i as i8 } else { -1 };
+        let tail_i = if let Some(i) = item.find(plc_tail) { i as i8 } else { -1 };
+        /* handle request for another script output path */
+        if -1 != head_i && -1 != tail_i && head_i < tail_i {
+           let s = item
+             .chars()
+             .skip(head_i as usize)
+             .take((tail_i - head_i + 1) as usize)
+             .collect::<String>();
+           let i = s
+             .chars()
+             .skip(plc_head.len())
+             .take(s.len() - plc_full.len())
+             .collect::<String>()
+             .parse::<i8>()
+             .unwrap();
+           return (i, s)
+        };
+        /* handle no request - value to be filtered out */
+        (-1, String::new())
+      })
+      .filter(|item| -1 != item.0)
+      .collect::<Vec<_>>();
 
     let has_placeholder = !plcs.is_empty();
 
     /* set as prog either tag line second item or default, and
            as args either Vec containing remaining items plus combined path or default flag plus remaining items joined */
-    let prog = if has_placeholder { String::from(defaults.get("cmd_prog").unwrap().to_owned()) } else { data.get(1).unwrap().to_owned() };
+    let prog = String::from(if has_placeholder { *defaults.get("cmd_prog").unwrap() } else { data.get(1).unwrap() });
     let args = if has_placeholder {
-      Vec::from([defaults.get("cmd_flag").unwrap().to_string(), data.iter().skip(1).map(|item| item.to_owned()).collect::<Vec<String>>().join(" ")])
-    }
-    else {
-      [data.iter().skip(2).map(|arg| arg.to_owned()).collect::<Vec<String>>(), Vec::from([path.get()])].concat()
+      Vec::from([
+        defaults.get("cmd_flag").unwrap().to_string(),
+        data
+          .iter()
+          .skip(1)
+          .map(|item| item.to_owned())
+          .collect::<Vec<_>>()
+          .join(" ")
+      ])
+    } else {
+      [
+        data
+          .iter()
+          .skip(2)
+          .map(|arg| arg.to_owned())
+          .collect::<Vec<_>>(),
+        Vec::from([path.get()])
+      ]
+        .concat()
     };
 
     let init = OutputFileInit::Code(OutputFileInitCode { prog, args, plcs });
@@ -286,9 +415,9 @@ impl OutputFile {
 
 #[derive(Debug, PartialEq)]
 struct OutputFilePath {
-  dir: String,
+  dir:  String,
   stem: String,
-  ext: String
+  ext:  String
 }
 
 impl OutputFilePath {
@@ -314,7 +443,7 @@ struct OutputFileInitCode {
 
 fn tag_head_add(line: &str, config: &Config) -> String {
   let tag_head = config.defaults.get("tag_head").unwrap();
-  if line.len() >= 3 && line[..3] == **tag_head { line.to_string() } else { format!("{} {}", tag_head, line.trim()) }
+  if line.len() >= 3 && line[..3] == **tag_head { line.to_string() } else { format!("{tag_head} {}", line.trim()) }
 }
 
 fn script_push(config: &Config, strs: Vec<String>) {
@@ -324,29 +453,46 @@ fn script_push(config: &Config, strs: Vec<String>) {
   /* handle read */
 
   let script = fs::read_to_string(script_filename)
-    .unwrap_or_else(|err| error_handle((&format!("Not parsing script file '{}'", script_filename), Some("read"), Some(err))));
+    .unwrap_or_else(|e| error_handle((
+      &format!("Not parsing script file '{script_filename}'"),
+      Some("read"),
+      Some(e)
+    )));
   let tag_line = tag_head_add(&strs[0], &config);
-  let script_plus_tag_line = format!("\n{}\n\n{}", tag_line, script);
+  let script_plus_tag_line = format!("\n{tag_line}\n\n{script}");
 
   /* handle write */
 
-  use io::Write;
-  let sum_base = format!("tag line '{}' and content of script file '{}' to source file '{}'", tag_line, script_filename, config.get_path_src());
-  let sum_failure = format!("Not appending {}", sum_base);
-  let sum_success = format!("Appended {}", sum_base);
+  let summary_base = format!(
+    "tag line '{tag_line}' and content of script file '{script_filename}' to source file '{}'",
+    config.get_path_src()
+  );
+  let summary_failure = format!("Not appending {summary_base}");
+  let summary_success = format!("Appended {summary_base}");
 
-  let mut file = fs::OpenOptions::new().append(true).open(config.get_path_src())
-    .unwrap_or_else(|err| error_handle((&sum_failure, Some("open"), Some(err))));
-  file.write_all(&script_plus_tag_line.into_bytes())
-    .unwrap_or_else(|err| error_handle((&sum_failure, Some("write"), Some(err))));
-  println!("{}", sum_success);
+  fs::OpenOptions::new()
+    .append(true)
+    .open(config.get_path_src())
+    .unwrap_or_else(|e| error_handle((
+      &summary_failure,
+      Some("open"),
+      Some(e)
+    )))
+    .write_all(&script_plus_tag_line.into_bytes())
+    .unwrap_or_else(|e| error_handle((
+      &summary_failure,
+      Some("write"),
+      Some(e)
+    )));
+
+  println!("{summary_success}");
 }
 
 fn error_handle(strs: (&String, Option<&str>, Option<io::Error>)) -> ! {
   match strs {
-    (sum, Some(act), Some(err)) => eprintln!("{} ({} error: '{}')", sum, act, err),
-    (sum, None, None)           => eprintln!("{}", sum),
-    _                           => eprintln!("Failed (unknown error)")
+    (s, Some(a), Some(e)) => eprintln!("{s} ({a} error: '{e}')"),
+    (s, None,    None   ) => eprintln!("{s}"),
+    _                     => eprintln!("Failed (unknown error)")
   }
   process::exit(1);
 }
@@ -357,7 +503,6 @@ fn error_handle(strs: (&String, Option<&str>, Option<io::Error>)) -> ! {
 
 fn if_paths_on_stdin_push_then_exit(config: &Config) {
 
-  use io::Read;
   let (tx, rx) = mpsc::channel();
 
   /* spawn thread for blocking read and send bytes */
@@ -370,7 +515,7 @@ fn if_paths_on_stdin_push_then_exit(config: &Config) {
         Ok(0)  => break,
         Ok(_)  => tx.send(bfr).unwrap(),
         Err(e) => {
-          format!("Failed (read error: '{}')", e);
+          format!("Failed (read error: '{e}')");
           process::exit(1);
         }
       }
@@ -389,12 +534,21 @@ fn if_paths_on_stdin_push_then_exit(config: &Config) {
   }
 
   /* process lines in string to paths */
-  let paths = recvd.trim_end_matches("\0").split_whitespace().map(|str| str.to_string()).filter(|str| !str.is_empty()).collect::<Vec<String>>();
+  let paths = recvd
+    .trim_end_matches("\0")
+    .split_whitespace()
+    .map(|s| s.to_string())
+    .filter(|s| !s.is_empty())
+    .collect::<Vec<_>>();
 
   /* handle script pushes for any paths */
   if !paths.is_empty() {
     for path in paths {
-      script_push(&config, Vec::from([config.defaults.get("sig_stop").unwrap().to_string(), path]));
+      let strs = Vec::from([
+        config.defaults.get("sig_stop").unwrap().to_string(),
+        path
+      ]);
+      script_push(&config, strs);
     }
     process::exit(0);
   };
@@ -403,8 +557,8 @@ fn if_paths_on_stdin_push_then_exit(config: &Config) {
 fn if_change_in_args_make_then_exit(source: &Source, config: &Config) {
 
   let args = match config.receipts.get("edit") {
-    Some(ConfigRecsVal::Strs(strs)) => strs.to_owned(),
-    _                               => Vec::new()
+    Some(ConfigRecsVal::Strs(s)) => s.to_owned(),
+    _                            => Vec::new()
   };
 
   /* handle source changes for any args */
@@ -419,33 +573,36 @@ fn if_change_in_args_make_then_exit(source: &Source, config: &Config) {
       .map(|script| {
         let Script { n, line, body } = script;
         let line_tagged = tag_head_add(line, &config);
-        format!("{}\n{}\n", if arg_n == *n { &arg_line_tagged } else { &line_tagged }, body)
+        format!("{}\n{body}\n", if arg_n == *n { &arg_line_tagged } else { &line_tagged })
       })
       .collect::<String>();
 
-    let text = format!("{}{}", source.preface, source_scripts);
+    let text = format!("{}{source_scripts}", source.preface);
 
     /* write source to file, with backup to then removal of temporary directory */
-    let path_src = config.get_path_src();
+    let path_src      = config.get_path_src();
     let path_src_inst = Path::new(&path_src);
     let path_src_stem = path_src_inst.file_stem().unwrap().to_str().unwrap();
     let path_src_ext  = path_src_inst.extension().unwrap().to_str().unwrap();
 
-    let secs = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+    let secs = SystemTime::now()
+      .duration_since(SystemTime::UNIX_EPOCH)
+      .unwrap()
+      .as_secs();
 
     let path_tmp_dir = config.defaults.get("path_tmp_dir").unwrap();
-    let path_tmp = format!("{}/{}_{}.{}", path_tmp_dir, path_src_stem, secs, path_src_ext);
+    let path_tmp = format!("{path_tmp_dir}/{path_src_stem}_{secs}.{path_src_ext}");
 
     fs::create_dir_all(&path_tmp_dir)
-      .unwrap_or_else(|_| panic!("create temporary directory '{}' for source backup", &path_tmp_dir));
+      .unwrap_or_else(|_| panic!("create temporary directory '{path_tmp_dir}' for source backup"));
     fs::copy(&path_src, &path_tmp)
-      .unwrap_or_else(|_| panic!("copy source as backup to '{}'", &path_tmp));
+      .unwrap_or_else(|_| panic!("copy source as backup to '{path_tmp}'"));
     fs::write(&path_src, text)
-      .unwrap_or_else(|_| panic!("write updated source to '{}'", &path_src));
+      .unwrap_or_else(|_| panic!("write updated source to '{path_src}'"));
     fs::remove_dir_all(&path_tmp_dir)
-      .unwrap_or_else(|_| panic!("remove temporary directory '{}'", &path_tmp_dir));
+      .unwrap_or_else(|_| panic!("remove temporary directory '{path_tmp_dir}'"));
 
-    println!("Updated tag line for script no. {} to '{}'", arg_n, arg_line_tagged);
+    println!("Updated tag line for script no. {arg_n} to '{arg_line_tagged}'");
     process::exit(0);
   };
 }
@@ -456,24 +613,37 @@ fn source_get(config: &Config) -> Source {
 
   /* load source file content as string or exit early */
   let sections = fs::read_to_string(&config.get_path_src())
-    .unwrap_or_else(|err| error_handle((&format!("Not parsing source file '{}'", config.get_path_src()), Some("read"), Some(err))))
+    .unwrap_or_else(|e| error_handle((
+      &format!("Not parsing source file '{}'", config.get_path_src()),
+      Some("read"),
+      Some(e)
+    )))
     /* set any init option text with tag head to placeholder */
     .lines()
-    .map(|line| if doc_line_file == line { "plc_doc_line_file" } else { line })
-    .map(|line| if doc_line_line == line { "plc_doc_line_line" } else { line })
-    .collect::<Vec<&str>>().join("\n")
+    .map(|l| if doc_line_file == l { "plc_doc_line_file" } else { l })
+    .map(|l| if doc_line_line == l { "plc_doc_line_line" } else { l })
+    .collect::<Vec<_>>()
+    .join("\n")
     /* get args section plus each source string (script with tag line minus tag head) numbered */
-    .split(config.defaults.get("tag_head").unwrap()).map(|part| part.to_owned())
+    .split(config.defaults.get("tag_head").unwrap())
+    .map(|part| part.to_owned())
     .enumerate()
     /* remove any shebang line */
-    .map(|(i, part)| if 0 == i && part.len() >= 2 && "#!" == &part[..2] { (i, part.splitn(2, '\n').last().unwrap().to_string()) } else { (i, part) })
-    .collect::<Vec<(usize, String)>>();
+    .map(|(i, part)| if 0 == i && part.len() >= 2 && "#!" == &part[..2] {
+        (i, part.splitn(2, '\n').last().unwrap().to_string())
+      } else {
+        (i, part)
+    })
+    .collect::<Vec<_>>();
 
   let preface = sections[0].1
     /* restore any init option text set to placeholder */
     .replace("plc_doc_line_file", doc_line_file)
     .replace("plc_doc_line_line", doc_line_line);
-  let scripts = Vec::from(sections.split_at(1).1).iter().map(|section| Script::new(section.0, section.1.to_owned())).collect::<Vec<Script>>();
+  let scripts = Vec::from(sections.split_at(1).1)
+    .iter()
+    .map(|section| Script::new(section.0, section.1.to_owned()))
+    .collect::<Vec<_>>();
 
   Source { preface, scripts }
 }
@@ -488,13 +658,16 @@ fn inputs_parse(script: &Script, config: &Config) -> Output {
     Some(i) => line.split_at(i + 1),
     None    => ("", line.as_str())
   };
-  let line_label = line_sections.0.split(defaults.get("tag_tail").unwrap()).nth(0).unwrap(); /* untrimmed */
+  let line_label = line_sections.0
+    .split(defaults.get("tag_tail").unwrap())
+    .nth(0)
+    .unwrap(); /* untrimmed */
   let line_data  = line_sections.1.trim();
 
   /* handle option - list - print only */
   if receipts.contains_key("list") {
-    let join = if !line_label.is_empty() { [line_label, ":"].concat() } else { "".to_string() };
-    let text = format!("{}:{} {}", n, join, line_data);
+    let join = if !line_label.is_empty() { [line_label, ":"].concat() } else { String::from("") };
+    let text = format!("{n}:{join} {line_data}");
     return Output::Text(OutputText::Stdout(text));
   };
 
@@ -502,15 +675,15 @@ fn inputs_parse(script: &Script, config: &Config) -> Output {
   let data = line_data.split(' ')
     .map(|item| item.to_string())
     .filter(|item| !item.is_empty()) /* remove whitespace */
-    .collect::<Vec<String>>();
+    .collect::<Vec<_>>();
 
   /* handle data absent or bypass */
   if data.is_empty() {
-    let text = format!("No tag data found for script no. {}", n);
+    let text = format!("No tag data found for script no. {n}");
     return Output::Text(OutputText::Stderr(text));
   }
   if data.get(0).unwrap() == defaults.get("sig_stop").unwrap() {
-    let text = format!("Bypassing script no. {} ({} applied)", n, defaults.get("sig_stop").unwrap());
+    let text = format!("Bypassing script no. {n} ({} applied)", defaults.get("sig_stop").unwrap());
     return Output::Text(OutputText::Stderr(text));
   }
 
@@ -518,19 +691,21 @@ fn inputs_parse(script: &Script, config: &Config) -> Output {
 }
 
 fn outputs_get(source: Source, config: &Config) -> Vec<Output> {
-  source.scripts.iter()
+  source.scripts
+    .iter()
     /* handle option - only - allow subset */
     .filter(|script| !config.receipts.contains_key("only") || match config.receipts.get("only").unwrap() {
-      ConfigRecsVal::Ints(val_ints) => val_ints.contains(&script.n),
-      _                             => false
+      ConfigRecsVal::Ints(ns) => ns.contains(&script.n),
+      _                       => false
     })
     /* parse input set to output instance */
     .map(|script| inputs_parse(script, &config))
-    .collect::<Vec<Output>>()
+    .collect::<Vec<_>>()
 }
 
 fn context_get(outputs: &Vec<Output>) -> HashMap<usize, String> {
-  outputs.iter()
+  outputs
+    .iter()
     /* get each output path with script no. */
     .fold(HashMap::new(), |mut acc: HashMap<usize, String>, output| {
       if let Output::File(file) = output { acc.insert(file.n, file.path.get()); }
@@ -544,8 +719,8 @@ fn output_apply(output: &Output, context: &HashMap<usize, String>) {
   match output {
     Output::Text(e) => {
       match e {
-        OutputText::Stdout(s) => {  println!("{}", &s); },
-        OutputText::Stderr(s) => { eprintln!("{}", &s); }
+        OutputText::Stdout(s) => {  println!("{s}"); },
+        OutputText::Stderr(s) => { eprintln!("{s}"); }
       }
     },
     Output::File(s) => { output_save(&s); output_exec(&s, &context); },
@@ -559,9 +734,9 @@ fn output_save(output: &OutputFile) {
   let path = path.get();
 
   /* add directory if none */
-  fs::create_dir_all(&dir).unwrap_or_else(|_| panic!("create directory '{}'", &dir));
+  fs::create_dir_all(&dir).unwrap_or_else(|_| panic!("create directory '{dir}'"));
   /* write script to file */
-  fs::write(&path, code).unwrap_or_else(|_| panic!("write script to '{}'", &path));
+  fs::write(&path, code).unwrap_or_else(|_| panic!("write script to '{path}'"));
 }
 
 fn output_exec(output: &OutputFile, context: &HashMap<usize, String>) {
@@ -573,8 +748,8 @@ fn output_exec(output: &OutputFile, context: &HashMap<usize, String>) {
     /* print reason file run precluded */
     OutputFileInit::Text(e) => {
       match e {
-        OutputText::Stdout(s) => {  println!("{}", &s); },
-        OutputText::Stderr(s) => { eprintln!("{}", &s); }
+        OutputText::Stdout(s) => {  println!("{s}"); },
+        OutputText::Stderr(s) => { eprintln!("{s}"); }
       }
     },
     /* run script from file */
@@ -585,16 +760,21 @@ fn output_exec(output: &OutputFile, context: &HashMap<usize, String>) {
         args.to_owned()
       } else {
         let mut cmd = if 0 == plcs.len() { String::new() } else { args[1].to_owned() };
-        plcs.iter().for_each(|plc| {
-          let path = if 0 == plc.0 { context.get(n).unwrap() } else { context.get(&(plc.0 as usize)).unwrap() };
-          cmd = cmd.replace(plc.1.as_str(), path.as_str()).to_owned();
-        });
+        plcs
+          .iter()
+          .for_each(|plc| {
+            let path = if 0 == plc.0 { context.get(n).unwrap() } else { context.get(&(plc.0 as usize)).unwrap() };
+            cmd = cmd.replace(plc.1.as_str(), path.as_str()).to_owned();
+          });
         Vec::from([args[0].to_owned(), cmd])
       };
 
-      process::Command::new(&prog).args(args_full)
-        .spawn().unwrap_or_else(|_| panic!("run file with '{}'", prog))
-        .wait_with_output().unwrap_or_else(|_| panic!("await output from '{}'", prog));
+      process::Command::new(&prog)
+        .args(args_full)
+        .spawn()
+        .unwrap_or_else(|_| panic!("run file with '{prog}'"))
+        .wait_with_output()
+        .unwrap_or_else(|_| panic!("await output from '{prog}'"));
     }
   }
 }
@@ -614,12 +794,23 @@ fn cli_option_list_apply(_0: &Config, _1: &[CLIOption], _2: Vec<String>) -> Conf
 }
 
 fn cli_option_only_apply(_0: &Config, _1: &[CLIOption], strs: Vec<String>) -> ConfigRecsVal {
-  let val_ints: Vec<usize> = strs[0].trim().split(',')
+  let val_ints = strs[0]
+    .trim()
+    .split(',')
     .flat_map(|val_str| {
-      let vals: Vec<usize> = val_str.trim().split('-').map(|item| item.parse::<usize>().expect("parse subset for option 'only'")).collect();
-      if vals.len() > 1 { (vals[0]..(vals[1] + 1)).collect::<Vec<usize>>() } else { vals }
+      let vals = val_str
+        .trim()
+        .split('-')
+        .map(|item| item.parse::<usize>().expect("parse subset for option 'only'"))
+        .collect::<Vec<_>>();
+      if vals.len() > 1 {
+        (vals[0]..(vals[1] + 1))
+          .collect::<Vec<_>>()
+      } else {
+         vals
+      }
     })
-    .collect();
+    .collect::<Vec<_>>();
   ConfigRecsVal::Ints(val_ints)
 }
 
@@ -630,36 +821,50 @@ fn cli_option_push_apply(config: &Config, _0: &[CLIOption], strs: Vec<String>) -
 
 fn cli_option_init_apply(config: &Config, _0: &[CLIOption], _1: Vec<String>) -> ConfigRecsVal {
 
-  let [file, line, data_main, data_plus, pipe] = doc_lines_get(&config);
+  let [file, line, main, plus, pipe] = doc_lines_get(&config);
   let src = &config.defaults.get("path_src").unwrap();
 
   let content = format!("\
     <any arguments to aliesce (run 'aliesce --help' for options)>\n\n\
     Notes on source file format:\n\n\
-    {}\n\n{}\n\n{}\n\n\
+    {file}\n\n{main}\n\n{plus}\n\n\
     Appending scripts via stdin:\n\n\
-    {}\n\n\
+    {pipe}\n\n\
     Tag line and script section:\n\n\
-    {}\n\n<script>\n\
-    ", file, data_main, data_plus, pipe, line
-  );
+    {line}\n\n<script>\n\
+  ");
 
   /* handle write */
 
-  let sum_failure = format!("Not creating template source file at '{}'", src);
+  let summary_failure = format!("Not creating template source file at '{src}'");
 
   /* exit early if source file exists */
-  if fs::metadata(src).is_ok() { error_handle((&format!("{} (path exists)", sum_failure), None, None)) };
+  if fs::metadata(src).is_ok() {
+    error_handle((
+      &format!("{summary_failure} (path exists)"),
+      None,
+      None
+    ))
+  };
 
-  fs::write(src, content).unwrap_or_else(|err| error_handle((&sum_failure, Some("write"), Some(err))));
+  fs::write(src, content)
+    .unwrap_or_else(|e| error_handle((
+      &summary_failure,
+      Some("write"),
+      Some(e)
+    )));
 
-  println!("Created template source file at '{}'", src);
+  println!("Created template source file at '{src}'");
   process::exit(0);
 }
 
 fn args_remaining_cli_apply(mut config: Config, args_remaining: Vec<String>) -> Config {
   /* set final source filename (incl. output stem) per positional arg */
-  let arg = if !args_remaining.is_empty() { args_remaining.get(0).unwrap().to_owned() } else { String::from(config.defaults.get("path_src").unwrap().to_owned()) };
+  let arg = String::from(if !args_remaining.is_empty() {
+    args_remaining.get(0).unwrap()
+  } else {
+    *config.defaults.get("path_src").unwrap()
+  });
   let val = ConfigRecsVal::Strs(Vec::from([arg]));
   config.receipts.insert(String::from("path_src"), val);
   config
@@ -692,10 +897,18 @@ mod args {
 
   impl CLIOption {
     pub fn new(word: &str, char: &str, val_strs: &[&str], desc: &str, call: &'static CLIOptionCall) -> CLIOption {
+      let strs = if !val_strs.is_empty() {
+        val_strs
+          .iter()
+          .map(|&s| String::from(s))
+          .collect::<Vec<_>>()
+      } else {
+        Vec::new()
+      };
       CLIOption {
         word: String::from(word),
         char: String::from(char),
-        strs: if !val_strs.is_empty() { val_strs.iter().map(|&val_str|String::from(val_str)).collect::<Vec<String>>() } else { Vec::new() },
+        strs,
         desc: String::from(desc),
         call: Box::new(call)
       }
@@ -722,47 +935,59 @@ mod args {
     let line_length_max = 80;
 
     /* set value substrings and max length */
-    let strs_strs = cli_options.iter()
-      .map(|cli_option| cli_option.strs.join(" "))
-      .collect::<Vec<String>>();
+    let strs_strs = cli_options
+      .iter()
+      .map(|o| o.strs.join(" "))
+      .collect::<Vec<_>>();
     let strs_strs_max = strs_strs.iter()
-      .fold(0, |acc, val_str| if val_str.len() > acc { val_str.len() } else { acc });
-    let flag_strs = cli_options.iter()
-      .map(|cli_option| format!("-{}, --{}", cli_option.char, cli_option.word))
-      .collect::<Vec<String>>();
-    let flag_strs_max = flag_strs.iter()
-      .fold(0, |acc, arg_str| if arg_str.len() > acc { arg_str.len() } else { acc });
+      .fold(0, |acc, s| if s.len() > acc { s.len() } else { acc });
+    let flag_strs = cli_options
+      .iter()
+      .map(|o| format!("-{}, --{}", o.char, o.word))
+      .collect::<Vec<_>>();
+    let flag_strs_max = flag_strs
+      .iter()
+      .fold(0, |acc, s| if s.len() > acc { s.len() } else { acc });
 
     /* generate title line */
     let title_line = format!("{}", line_center_with_fill(&name_and_version_get(), line_length_max, "-"));
 
     /* generate usage text */
-    let usage_opts_part = cli_options.iter()
-      .filter(|cli_option| cli_option.word != "version" && cli_option.word != "help") /* avoid duplication */
+    let usage_opts_part = cli_options
+      .iter()
+      .filter(|o| o.word != "version" && o.word != "help") /* avoid duplication */
       .enumerate() /* yield also index (i) */
-      .map(|(i, cli_option)| format!("[--{}/-{}{}]", cli_option.word, cli_option.char, if strs_strs[i].is_empty() { "".to_owned() } else { " ".to_owned() + &strs_strs[i] }))
-      .collect::<Vec<String>>()
+      .map(|(i, o)| format!(
+        "[--{}/-{}{}]",
+        o.word,
+        o.char,
+        if strs_strs[i].is_empty() { String::from("") } else { [" ", &strs_strs[i]].concat() })
+      )
+      .collect::<Vec<_>>()
       .join(" ");
-    let usage_opts_head = line_break_and_indent(&format!("{} [SOURCE]", usage_opts_part), 15, line_length_max, false);
+    let usage_opts_head = line_break_and_indent(&format!("{usage_opts_part} [SOURCE]"), 15, line_length_max, false);
     let usage_opts_tail = line_break_and_indent(&format!("/ --version/-v / --help/-h"), 15, line_length_max, true);
-    let usage_text = format!("Usage: aliesce {}\n{}", usage_opts_head, usage_opts_tail);
+    let usage_text = format!("Usage: aliesce {usage_opts_head}\n{usage_opts_tail}");
 
     /* generate flags text */
-    let flags_list = cli_options.iter()
+    let flags_list = cli_options
+      .iter()
       .enumerate() /* yield also index (i) */
-      .map(|(i, cli_option)| {
-        let desc = line_break_and_indent(&cli_option.desc, flag_strs_max + strs_strs_max + 2, line_length_max, false);
-        format!(" {}  {:w$}  {}", flag_strs[i], strs_strs[i], desc, w = flag_strs_max - cli_option.word.len())
+      .map(|(i, o)| {
+        let desc = line_break_and_indent(&o.desc, flag_strs_max + strs_strs_max + 2, line_length_max, false);
+        format!(" {}  {:w$}  {desc}", flag_strs[i], strs_strs[i], w = flag_strs_max - o.word.len())
       })
-      .collect::<Vec<String>>()
+      .collect::<Vec<_>>()
       .join("\n");
-    let flags_text = format!("Flags:\n{}", flags_list);
+    let flags_text = format!("Flags:\n{flags_list}");
 
     /* generate notes text */
-    let notes_body = doc_lines_get(&config).map(|line| line_break_and_indent(&line, 1, line_length_max, true)).join("\n\n");
-    let notes_text = format!("Notes:\n{}", notes_body);
+    let notes_body = doc_lines_get(&config)
+      .map(|l| line_break_and_indent(&l, 1, line_length_max, true))
+      .join("\n\n");
+    let notes_text = format!("Notes:\n{notes_body}");
 
-    println!("{}\n\n{}\n{}\n\n{}", title_line, usage_text, flags_text, notes_text);
+    println!("{title_line}\n\n{usage_text}\n{flags_text}\n\n{notes_text}");
     process::exit(0);
   }
 
@@ -775,18 +1000,21 @@ mod args {
   fn line_center_with_fill(line: &str, length: usize, fill: &str) -> String {
     let whitespace_half = String::from(fill).repeat((length - line.len() - 2) / 2);
     let whitespace_last = if 0 == line.len() % 2 { "" } else { fill };
-    format!("{} {} {}{}", whitespace_half, line, whitespace_half, whitespace_last)
+    format!("{whitespace_half} {line} {whitespace_half}{whitespace_last}")
   }
 
   fn line_break_and_indent(line: &str, indent: usize, length: usize, indent_first: bool ) -> String {
 
     let whitespace_part = String::from(" ").repeat(indent);
-    let whitespace_full = format!("\n{}", whitespace_part);
+    let whitespace_full = format!("\n{whitespace_part}");
     let text_width = length - indent;
 
-    let body = line.split(' ').collect::<Vec<&str>>().iter()
+    let body = line
+      .split(' ')
+      .collect::<Vec<_>>()
+      .iter()
       .fold(Vec::new(), |mut acc: Vec<String>, word| {
-        if acc.is_empty() { return Vec::from([word.to_string()]) };
+        if acc.is_empty() { return Vec::from([String::from(*word)]) };
         /* accrue text part of each line by word, not exceeding text width */
         let index_last = acc.len() - 1;
         match acc[index_last].chars().count() + word.chars().count() >= text_width {
@@ -799,7 +1027,7 @@ mod args {
       })
       .join(whitespace_full.as_str());
 
-    if indent_first { format!("{}{}", whitespace_part, body) } else { body }
+    if indent_first { format!("{whitespace_part}{body}") } else { body }
   }
 
   /* - primary functions, remaining */
@@ -814,7 +1042,7 @@ mod args {
     if args_count > 0 {
       for cli_option in cli_options {
         for j in 0..args_count {
-          if "--".to_owned() + &cli_option.word == args[j] || "-".to_owned() + &cli_option.char == args[j] {
+          if ["--", &cli_option.word].concat() == args[j] || ["-", &cli_option.char].concat() == args[j] {
             let strs_len = cli_option.strs.len();
             let strs = args[(j + 1)..(j + strs_len + 1)].to_vec();
             cli_options_queued.push((&cli_option.word, &cli_option.call, strs));
@@ -833,7 +1061,7 @@ mod args {
       for opt_queued in &cli_options_queued {
         let (word, call, strs) = &opt_queued;
         let value = call(&config, cli_options, strs.to_vec());
-        config.receipts.insert(word.to_string(), value);
+        config.receipts.insert(String::from(*word), value);
       }
     }
 
@@ -880,7 +1108,7 @@ mod test {
   fn test_values_end_to_end_get() -> [String; 14] {
 
     let path_dir = String::from(PATH_TMP_DIR_TEST);
-    let path_source = format!("{}/source.txt", &path_dir);
+    let path_source = format!("{path_dir}/source.txt");
 
     let (path_script_1, content_script_body_1) = test_values_script_get(&path_dir, 1);
     let (path_script_2, content_script_body_2) = test_values_script_get(&path_dir, 2);
@@ -889,10 +1117,10 @@ mod test {
     let content_source_preface = String::from("Test preface\n");
     let content_source_script_line = format!("### sh sh\n");
     let content_source_script_body = format!("echo \"Running initial\"\n");
-    let content_source = format!("{}{}{}", &content_source_preface, &content_source_script_line, &content_source_script_body);
+    let content_source = format!("{content_source_preface}{content_source_script_line}{content_source_script_body}");
 
     let content_script_line_untagged = format!(">/test.sh sh");
-    let content_script_line_tagged = format!("{} {}", DEFAULTS[3].1, &content_script_line_untagged);
+    let content_script_line_tagged = format!("{} {content_script_line_untagged}", DEFAULTS[3].1);
     let content_script_line_tagged_bypass = format!("{} {}", DEFAULTS[3].1, DEFAULTS[5].1);
 
     [
@@ -905,16 +1133,18 @@ mod test {
 
   fn test_tree_create(files: Vec<[&str; 3]>) {
     let path_dir = &test_values_end_to_end_get()[0];
-    fs::create_dir_all(&path_dir).unwrap_or_else(|_| panic!("create temporary test directory '{}'", &path_dir));
+    fs::create_dir_all(&path_dir)
+      .unwrap_or_else(|_| panic!("create temporary test directory '{path_dir}'"));
     for file in files {
       let [path_file, content_file, description] = file;
-      fs::write(&path_file, &content_file).unwrap_or_else(|_| panic!("write {} to '{}'", &description, &path_file));
+      fs::write(&path_file, &content_file).unwrap_or_else(|_| panic!("write {description} to '{path_file}'"));
     }
   }
 
   fn test_tree_remove() {
     let path_dir = &test_values_end_to_end_get()[0];
-    fs::remove_dir_all(&path_dir).unwrap_or_else(|_| panic!("remove temporary test directory '{}'", &path_dir));
+    fs::remove_dir_all(&path_dir)
+      .unwrap_or_else(|_| panic!("remove temporary test directory '{path_dir}'"));
   }
 
   /*     - stdin read */
@@ -946,13 +1176,20 @@ mod test {
       .spawn()
       .unwrap();
 
-    let input = format!("{}{d}{}{d}{}", path_script_1, path_script_2, path_script_3, d = input_delimiter);
+    let input = format!("{path_script_1}{d}{path_script_2}{d}{path_script_3}", d = input_delimiter);
 
-    proc.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
-    let output_raw = proc.wait_with_output().unwrap();
+    proc.stdin
+      .take()
+      .unwrap()
+      .write_all(input.as_bytes())
+      .unwrap();
+    let output_raw = proc
+      .wait_with_output()
+      .unwrap();
 
     let output = String::from_utf8_lossy(&output_raw.stdout);
-    let source = fs::read_to_string(&path_source).unwrap_or_else(|_| panic!("reading from test source"));
+    let source = fs::read_to_string(&path_source)
+      .unwrap_or_else(|_| panic!("reading from test source"));
     let source_line_1 = source.lines().nth( 4).unwrap();
     let source_line_2 = source.lines().nth( 8).unwrap();
     let source_line_3 = source.lines().nth(12).unwrap();
@@ -1005,13 +1242,21 @@ mod test {
 
     /* acquisitions */
 
-    let output_push_raw = process::Command::new("cargo").args(Vec::from(["run", "--", "-p", &content_script_line_untagged, &path_script, &path_source])).output().unwrap();
+    let output_push_raw = process::Command::new("cargo")
+      .args(Vec::from(["run", "--", "-p", &content_script_line_untagged, &path_script, &path_source]))
+      .output()
+      .unwrap();
     let output_push = String::from_utf8_lossy(&output_push_raw.stdout);
-    let source_push = fs::read_to_string(&path_source).unwrap_or_else(|_| panic!("reading from test source"));
+    let source_push = fs::read_to_string(&path_source)
+      .unwrap_or_else(|_| panic!("reading from test source"));
     let source_push_line = source_push.lines().nth(4).unwrap();
 
-    process::Command::new("cargo").args(Vec::from(["run", "--", "-p", &content_script_line_tagged, &path_script, &path_source])).output().unwrap();
-    let source_push_tagged = fs::read_to_string(&path_source).unwrap_or_else(|_| panic!("reading from test source"));
+    process::Command::new("cargo")
+      .args(Vec::from(["run", "--", "-p", &content_script_line_tagged, &path_script, &path_source]))
+      .output()
+      .unwrap();
+    let source_push_tagged = fs::read_to_string(&path_source)
+      .unwrap_or_else(|_| panic!("reading from test source"));
     let source_push_tagged_line = source_push_tagged.lines().nth(4).unwrap();
 
     test_tree_remove();
@@ -1046,13 +1291,21 @@ mod test {
 
     /* acquisitions */
 
-    let output_edit_raw = process::Command::new("cargo").args(Vec::from(["run", "--", "-e", &n_edit, &content_script_line_untagged, &path_source])).output().unwrap();
+    let output_edit_raw = process::Command::new("cargo")
+      .args(Vec::from(["run", "--", "-e", &n_edit, &content_script_line_untagged, &path_source]))
+      .output()
+      .unwrap();
     let output_edit = String::from_utf8_lossy(&output_edit_raw.stdout);
-    let source_edit = fs::read_to_string(&path_source).unwrap_or_else(|_| panic!("reading from test source"));
+    let source_edit = fs::read_to_string(&path_source)
+      .unwrap_or_else(|_| panic!("reading from test source"));
     let source_edit_line = source_edit.lines().nth(1).unwrap();
 
-    process::Command::new("cargo").args(Vec::from(["run", "--", "-e", &n_edit, &content_script_line_tagged, &path_source])).output().unwrap();
-    let source_edit_tagged = fs::read_to_string(&path_source).unwrap_or_else(|_| panic!("reading from test source"));
+    process::Command::new("cargo")
+      .args(Vec::from(["run", "--", "-e", &n_edit, &content_script_line_tagged, &path_source]))
+      .output()
+      .unwrap();
+    let source_edit_tagged = fs::read_to_string(&path_source)
+      .unwrap_or_else(|_| panic!("reading from test source"));
     let source_edit_tagged_line = source_edit_tagged.lines().nth(1).unwrap();
 
     test_tree_remove();
@@ -1073,10 +1326,16 @@ mod test {
   #[test]
   fn cli_option_version() {
 
-    let output_raw = process::Command::new("cargo").args(Vec::from(["run", "--", "-v"])).output().unwrap();
+    let output_raw = process::Command::new("cargo")
+      .args(Vec::from(["run", "--", "-v"]))
+      .output()
+      .unwrap();
 
     let output = String::from_utf8_lossy(&output_raw.stdout);
-    let output_parts = output.split(" v").map(|part| part.trim()).collect::<Vec<&str>>();
+    let output_parts = output
+      .split(" v")
+      .map(|part| part.trim())
+      .collect::<Vec<_>>();
 
     assert_eq!("aliesce", output_parts[0]);
     assert_eq!(env!("CARGO_PKG_VERSION"), output_parts[1]);
@@ -1085,39 +1344,77 @@ mod test {
   #[test]
   fn cli_option_help() {
 
-    let output_raw = process::Command::new("cargo").args(Vec::from(["run", "--", "-h"])).output().unwrap();
+    let output_raw = process::Command::new("cargo")
+      .args(Vec::from(["run", "--", "-h"]))
+      .output()
+      .unwrap();
 
     let output = String::from_utf8_lossy(&output_raw.stdout);
-    let output_parts_on_usage = output.split("Usage:").collect::<Vec<&str>>();
-    let output_parts_on_flags = output_parts_on_usage[1].split("Flags:").collect::<Vec<&str>>();
-    let output_parts_on_notes = output_parts_on_flags[1].split("Notes:").collect::<Vec<&str>>();
+    let output_parts_on_usage = output
+      .split("Usage:")
+      .collect::<Vec<_>>();
+    let output_parts_on_flags = output_parts_on_usage[1]
+      .split("Flags:")
+      .collect::<Vec<_>>();
+    let output_parts_on_notes = output_parts_on_flags[1]
+      .split("Notes:")
+      .collect::<Vec<_>>();
 
-    let config_init = Config { defaults: HashMap::from(DEFAULTS), receipts: HashMap::new() };
+    let config_init = Config {
+      defaults: HashMap::from(DEFAULTS),
+      receipts: HashMap::new()
+    };
     let cli_options = cli_options_get(&config_init);
-
     let doc_lines_line = doc_lines_get(&config_init).join(" ");
 
     /* title section */
+
     let output_title_part = output_parts_on_usage[0];
+
     assert!(output_title_part.contains("aliesce"));
     assert!(output_title_part.contains(env!("CARGO_PKG_VERSION")));
 
     /* usage section */
-    let output_usage_line = output_parts_on_flags[0].replace("\n", " ");
+
+    let output_usage_line = output_parts_on_flags[0]
+      .replace("\n", " ");
+
     for cli_option in &cli_options {
-      let arg_set = format!("--{}/-{} {}", cli_option.word, cli_option.char, cli_option.strs.join(" "));
+      let arg_set = format!(
+        "--{}/-{} {}",
+        cli_option.word,
+        cli_option.char,
+        cli_option.strs.join(" ")
+      );
       assert!(output_usage_line.contains(&arg_set.trim()));
     }
 
     /* flags section */
-    let output_flags_line_condensed = output_parts_on_notes[0].replace("\n", " ").chars().filter(|char| ' ' != *char).collect::<String>();
+
+    let output_flags_line_condensed = output_parts_on_notes[0]
+      .replace("\n", " ")
+      .chars()
+      .filter(|c| ' ' != *c)
+      .collect::<String>();
+
     for cli_option in &cli_options {
-      let flag_line_condensed = format!("-{},--{}{}{}", cli_option.char, cli_option.word, cli_option.strs.join(""), cli_option.desc.replace(" ", ""));
+      let flag_line_condensed = format!(
+        "-{},--{}{}{}",
+        cli_option.char,
+        cli_option.word,
+        cli_option.strs.join(""),
+        cli_option.desc.replace(" ", "")
+      );
       assert!(output_flags_line_condensed.contains(&flag_line_condensed));
     }
 
     /* notes section */
-    let output_notes_line = output_parts_on_notes[1].replace("\n", "").trim().to_string();
+
+    let output_notes_line = output_parts_on_notes[1]
+      .replace("\n", "")
+      .trim()
+      .to_string();
+
     assert_eq!(doc_lines_line, output_notes_line);
   }
 
@@ -1135,12 +1432,12 @@ mod test {
     /* base test script values */
 
     let output_path = OutputFilePath {
-      dir:  String::from(config_default.defaults.get("path_dir").unwrap().to_owned()),
-      stem: String::from(config_default.defaults.get("path_src").unwrap().split(".").nth(0).unwrap()),
+      dir:  String::from(*config_default.defaults.get("path_dir").unwrap()),
+      stem: String::from( config_default.defaults.get("path_src").unwrap().split(".").nth(0).unwrap()),
       ext:  String::from("ext")
     };
 
-    let body = "//code".to_string();
+    let body = String::from("//code");
 
     let number = 1;
     let prog  = String::from("program");
@@ -1158,8 +1455,13 @@ mod test {
 
     let (config_default, body, n, code, path, init) = test_values_inputs_parse_get();
 
-    let line = " ext program --flag value\n".to_string();
-    let data = Vec::from(["ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
+    let line = String::from(" ext program --flag value\n");
+    let data = Vec::from([
+      String::from("ext"),
+      String::from("program"),
+      String::from("--flag"),
+      String::from("value")
+    ]);
 
     let expected = Output::File(OutputFile { data, code, path, init, n });
     let obtained = inputs_parse(&Script { n, line, body }, &config_default);
@@ -1172,8 +1474,13 @@ mod test {
 
     let (config_default, body, n, code, path, init) = test_values_inputs_parse_get();
 
-    let line = " label # ext program --flag value\n".to_string();
-    let data = Vec::from(["ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
+    let line = String::from(" label # ext program --flag value\n");
+    let data = Vec::from([
+      String::from("ext"),
+      String::from("program"),
+      String::from("--flag"),
+      String::from("value")
+    ]);
 
     let expected = Output::File(OutputFile { data, code, path, init, n });
     let obtained = inputs_parse(&Script { n, line, body }, &config_default);
@@ -1186,16 +1493,21 @@ mod test {
 
     let (mut config_default, body, n, code, _, mut init) = test_values_inputs_parse_get();
 
-    let line = " ext program --flag value\n".to_string();
-    let data = Vec::from(["ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
+    let line = String::from(" ext program --flag value\n");
+    let data = Vec::from([
+      String::from("ext"),
+      String::from("program"),
+      String::from("--flag"),
+      String::from("value")
+    ]);
 
-    let dir = String::from("dest");
+    let dir  = String::from("dest");
     let stem = String::from(config_default.defaults.get("path_src").unwrap().split(".").nth(0).unwrap());
-    let ext = String::from("ext");
+    let ext  = String::from("ext");
     let path = OutputFilePath { dir, stem, ext };
 
     match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
-    config_default.receipts.insert("dest".to_string(), ConfigRecsVal::Strs(Vec::from([String::from("dest")])));
+    config_default.receipts.insert(String::from("dest"), ConfigRecsVal::Strs(Vec::from([String::from("dest")])));
 
     let expected = Output::File(OutputFile { data, code, path, init, n });
     let obtained = inputs_parse(&Script { n, line, body }, &config_default);
@@ -1208,9 +1520,9 @@ mod test {
 
     let (mut config_default, body, n, _, _, _) = test_values_inputs_parse_get();
 
-    let line = " ext program --flag value\n".to_string();
+    let line = String::from(" ext program --flag value\n");
 
-    config_default.receipts.insert("list".to_string(), ConfigRecsVal::Bool);
+    config_default.receipts.insert(String::from("list"), ConfigRecsVal::Bool);
 
     let expected = Output::Text(OutputText::Stdout(String::from("1: ext program --flag value")));
     let obtained = inputs_parse(&Script { n, line, body }, &config_default);
@@ -1223,12 +1535,17 @@ mod test {
 
     let (config_default, body, n, code, _, mut init) = test_values_inputs_parse_get();
 
-    let line = " script.ext program --flag value\n".to_string();
-    let data = Vec::from(["script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
+    let line = String::from(" script.ext program --flag value\n");
+    let data = Vec::from([
+      String::from("script.ext"),
+      String::from("program"),
+      String::from("--flag"),
+      String::from("value")
+    ]);
 
-    let dir = String::from(config_default.defaults.get("path_dir").unwrap().to_owned());
+    let dir  = String::from(*config_default.defaults.get("path_dir").unwrap());
     let stem = String::from("script");
-    let ext = String::from("ext");
+    let ext  = String::from("ext");
     let path = OutputFilePath { dir, stem, ext };
 
     match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
@@ -1244,12 +1561,17 @@ mod test {
 
     let (config_default, body, n, code, _, mut init) = test_values_inputs_parse_get();
 
-    let line = " script.suffix1.suffix2.ext program --flag value\n".to_string();
-    let data = Vec::from(["script.suffix1.suffix2.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
+    let line = String::from(" script.suffix1.suffix2.ext program --flag value\n");
+    let data = Vec::from([
+      String::from("script.suffix1.suffix2.ext"),
+      String::from("program"),
+      String::from("--flag"),
+      String::from("value")
+    ]);
 
-    let dir = String::from(config_default.defaults.get("path_dir").unwrap().to_owned());
+    let dir  = String::from(*config_default.defaults.get("path_dir").unwrap());
     let stem = String::from("script.suffix1.suffix2");
-    let ext = String::from("ext");
+    let ext  = String::from("ext");
     let path = OutputFilePath { dir, stem, ext };
 
     match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
@@ -1265,12 +1587,17 @@ mod test {
 
     let (config_default, body, n, code, _, mut init) = test_values_inputs_parse_get();
 
-    let line = " dir/script.ext program --flag value\n".to_string();
-    let data = Vec::from(["dir/script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
+    let line = String::from(" dir/script.ext program --flag value\n");
+    let data = Vec::from([
+      String::from("dir/script.ext"),
+      String::from("program"),
+      String::from("--flag"),
+      String::from("value")
+    ]);
 
-    let dir = String::from("dir");
+    let dir  = String::from("dir");
     let stem = String::from("script");
-    let ext = String::from("ext");
+    let ext  = String::from("ext");
     let path = OutputFilePath { dir, stem, ext };
 
     match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
@@ -1286,12 +1613,17 @@ mod test {
 
     let (config_default, body, n, code, _, mut init) = test_values_inputs_parse_get();
 
-    let line = " >/script.ext program --flag value\n".to_string();
-    let data = Vec::from([">/script.ext".to_string(), "program".to_string(), "--flag".to_string(), "value".to_string()]);
+    let line = String::from(" >/script.ext program --flag value\n");
+    let data = Vec::from([
+      String::from(">/script.ext"),
+      String::from("program"),
+      String::from("--flag"),
+      String::from("value")
+    ]);
 
-    let dir = String::from("scripts");
+    let dir  = String::from("scripts");
     let stem = String::from("script");
-    let ext = String::from("ext");
+    let ext  = String::from("ext");
     let path = OutputFilePath { dir, stem, ext };
 
     match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
@@ -1307,11 +1639,22 @@ mod test {
 
     let (config_default, body, n, code, path, _) = test_values_inputs_parse_get();
 
-    let line = " ext program_1 --flag value >< | program_2\n".to_string();
-    let data = Vec::from(["ext".to_string(), "program_1".to_string(), "--flag".to_string(), "value".to_string(), "><".to_string(), "|".to_string(), "program_2".to_string()]);
+    let line = String::from(" ext program_1 --flag value >< | program_2\n");
+    let data = Vec::from([
+      String::from("ext"),
+      String::from("program_1"),
+      String::from("--flag"),
+      String::from("value"),
+      String::from("><"),
+      String::from("|"),
+      String::from("program_2")
+    ]);
 
-    let prog = String::from(config_default.defaults.get("cmd_prog").unwrap().to_owned());
-    let args = Vec::from([String::from(config_default.defaults.get("cmd_flag").unwrap().to_owned()), String::from("program_1 --flag value >< | program_2")]);
+    let prog = String::from(*config_default.defaults.get("cmd_prog").unwrap());
+    let args = Vec::from([
+      String::from(*config_default.defaults.get("cmd_flag").unwrap()),
+      String::from("program_1 --flag value >< | program_2")
+    ]);
     let plcs = Vec::from([(0, String::from("><"))]);
     let init = OutputFileInit::Code(OutputFileInitCode { prog, args, plcs });
 
@@ -1326,8 +1669,8 @@ mod test {
 
     let (config_default, body, n, code, path, _) = test_values_inputs_parse_get();
 
-    let line = " ext\n".to_string();
-    let data = Vec::from(["ext".to_string()]);
+    let line = String::from(" ext\n");
+    let data = Vec::from([String::from("ext")]);
 
     let init = OutputFileInit::Text(OutputText::Stderr(String::from("Not running file no. 1 (no values)")));
 
@@ -1342,7 +1685,7 @@ mod test {
 
     let (config_default, body, n, _, _, _) = test_values_inputs_parse_get();
 
-    let line = " ! ext program --flag value\n".to_string();
+    let line = String::from(" ! ext program --flag value\n");
 
     let expected = Output::Text(OutputText::Stderr(String::from("Bypassing script no. 1 (! applied)")));
     let obtained = inputs_parse(&Script { n, line, body }, &config_default);
@@ -1355,7 +1698,7 @@ mod test {
 
     let (config_default, body, n, _, _, _) = test_values_inputs_parse_get();
 
-    let line = "\n".to_string();
+    let line = String::from("\n");
 
     let expected = Output::Text(OutputText::Stderr(String::from("No tag data found for script no. 1")));
     let obtained = inputs_parse(&Script { n, line, body }, &config_default);

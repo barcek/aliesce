@@ -24,24 +24,22 @@ Allows for a granular one-run project generation and transformation.
 
 ## Why?
 
-For smoother development of related code, to keep the source about as closely collocated as possible, or for coding practice in parallel, for a more direct absorption of syntax and idiom.
+For smoother development of related code, to keep the source about as closely collocated as possible, or for learning by coding comparatively across languages.
 
 ## How?
 
-By providing a simple tag line above each script containing values to be used in saving and running it.
+By preceding each script in the source file with a single line, called a tag line, which can hold values used to save and run the script. These values might be the output file extension and the name of the executable. For example, `### exs elixir` could be the tag line to save and run a simple Elixir script.
 
 ### Source file setup
 
-Create a file for your scripts. Give it any name, and any extension or none. Use the current default name - 'src.txt' - to avoid passing an argument later.
+Create a file to hold the scripts. Give it any name, and any file extension or none. Use the current default name - 'src.txt' - to avoid passing an argument later.
 
-Add the scripts to the file. Immediately above each script, insert a tag line starting by default with `###`. Include in the tag line the following elements:
+As you add each script to the file, insert above it a tag line starting by default with `###`. A tag line might include the following elements separated by one or more spaces:
 
-- the file extension for that language, or the full output filename including extension, or the full output path including directory and extension
-- the command to be run, if any, e.g. the program to be used to run the file and any arguments to pass to that program - the path to the file is added as the final argument by default
+- first, the file extension for that language, or the full output filename including extension, or the full output path including directory and extension
+- next, the command to be run, if any, e.g. the program to be used to run the file as well as any arguments to pass to that program - note that the path to the output file is added as the final argument by default
 
-Ensure each element is separated by one or more spaces.
-
-For example, a possible tag line and script in Elixir:
+For example, a possible tag line with both of these elements and the corresponding script in Elixir:
 
 ```
 ### exs elixir -r setup
@@ -49,9 +47,11 @@ For example, a possible tag line and script in Elixir:
 IO.puts("Up and running...")
 ```
 
-This tells aliesce to save the script below the tag line in a file with the `exs` extension, then run that file with the `elixir` command, applying one option, to require a file named 'setup'.
+This tells aliesce to save the script below the tag line in a file with the `exs` extension, then run that file with the `elixir` command, applying one option, to require a file named 'setup'. For convenience, this required file could be generated as part of the same run from an earlier script in the source.
 
-A template source file can be created and scripts written in other files appended to an existing file via the command line (see [Options](#options) below).
+For alternatives to this tag line content, see [There's more...](#theres-more) below.
+
+For a source file template and a means of appending scripts written in other files via the command line, see [Options](#options).
 
 ### Running aliesce
 

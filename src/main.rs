@@ -1115,7 +1115,7 @@ mod test {
     let (path_script_3, content_script_body_3) = test_values_script_get(&path_dir, 3);
 
     let content_source_preface = String::from("Test preface\n");
-    let content_source_script_line = format!("### sh sh\n");
+    let content_source_script_line = format!("{} sh sh\n", DEFAULTS[3].1);
     let content_source_script_body = format!("echo \"Running initial\"\n");
     let content_source = format!("{content_source_preface}{content_source_script_line}{content_source_script_body}");
 
@@ -1225,7 +1225,7 @@ mod test {
   /*     - CLI options: push, edit */
 
   #[test]
-  fn cli_options_push() {
+  fn cli_option_push() {
 
     let [
       _, path_source, path_script, _, _,
@@ -1242,38 +1242,43 @@ mod test {
 
     /* acquisitions */
 
-    let output_push_raw = process::Command::new("cargo")
+    let output_raw = process::Command::new("cargo")
       .args(Vec::from(["run", "--", "-p", &content_script_line_untagged, &path_script, &path_source]))
       .output()
       .unwrap();
-    let output_push = String::from_utf8_lossy(&output_push_raw.stdout);
-    let source_push = fs::read_to_string(&path_source)
+    let output = String::from_utf8_lossy(&output_raw.stdout);
+    let source = fs::read_to_string(&path_source)
       .unwrap_or_else(|_| panic!("reading from test source"));
-    let source_push_line = source_push.lines().nth(4).unwrap();
+    let source_line = source.lines().nth(4).unwrap();
 
-    process::Command::new("cargo")
+    let output_tagged_raw = process::Command::new("cargo")
       .args(Vec::from(["run", "--", "-p", &content_script_line_tagged, &path_script, &path_source]))
       .output()
       .unwrap();
-    let source_push_tagged = fs::read_to_string(&path_source)
+    let output_tagged = String::from_utf8_lossy(&output_tagged_raw.stdout);
+    let source_tagged = fs::read_to_string(&path_source)
       .unwrap_or_else(|_| panic!("reading from test source"));
-    let source_push_tagged_line = source_push_tagged.lines().nth(4).unwrap();
+    let source_tagged_line = source_tagged.lines().nth(4).unwrap();
 
     test_tree_remove();
 
     /* assertions */
 
-    assert!(output_push.contains(&content_script_line_tagged));
-    assert!(output_push.contains(&path_script));
+    assert!(output.contains(&content_script_line_tagged));
+    assert!(output.contains(&path_script));
+    assert!(source.contains(&content_source));
+    assert!(source.contains(&content_script_body));
+    assert_eq!(content_script_line_tagged, source_line);
 
-    assert!(source_push.contains(&content_source));
-    assert_eq!(content_script_line_tagged, source_push_line);
-    assert_eq!(content_script_line_tagged, source_push_tagged_line);
-    assert!(source_push.contains(&content_script_body));
+    assert!(output_tagged.contains(&content_script_line_tagged));
+    assert!(output_tagged.contains(&path_script));
+    assert!(source_tagged.contains(&content_source));
+    assert!(source_tagged.contains(&content_script_body));
+    assert_eq!(content_script_line_tagged, source_tagged_line);
   }
 
   #[test]
-  fn cli_options_edit() {
+  fn cli_option_edit() {
 
     let [
       _, path_source, _, _, _,
@@ -1287,38 +1292,43 @@ mod test {
       [&path_source, &content_source, "test source"]
     ]));
 
-    let n_edit = "1";
+    let n_script = "1";
 
     /* acquisitions */
 
-    let output_edit_raw = process::Command::new("cargo")
-      .args(Vec::from(["run", "--", "-e", &n_edit, &content_script_line_untagged, &path_source]))
+    let output_raw = process::Command::new("cargo")
+      .args(Vec::from(["run", "--", "-e", &n_script, &content_script_line_untagged, &path_source]))
       .output()
       .unwrap();
-    let output_edit = String::from_utf8_lossy(&output_edit_raw.stdout);
-    let source_edit = fs::read_to_string(&path_source)
+    let output = String::from_utf8_lossy(&output_raw.stdout);
+    let source = fs::read_to_string(&path_source)
       .unwrap_or_else(|_| panic!("reading from test source"));
-    let source_edit_line = source_edit.lines().nth(1).unwrap();
+    let source_line = source.lines().nth(1).unwrap();
 
-    process::Command::new("cargo")
-      .args(Vec::from(["run", "--", "-e", &n_edit, &content_script_line_tagged, &path_source]))
+    let output_tagged_raw = process::Command::new("cargo")
+      .args(Vec::from(["run", "--", "-e", &n_script, &content_script_line_tagged, &path_source]))
       .output()
       .unwrap();
-    let source_edit_tagged = fs::read_to_string(&path_source)
+    let output_tagged = String::from_utf8_lossy(&output_tagged_raw.stdout);
+    let source_tagged = fs::read_to_string(&path_source)
       .unwrap_or_else(|_| panic!("reading from test source"));
-    let source_edit_tagged_line = source_edit_tagged.lines().nth(1).unwrap();
+    let source_tagged_line = source_tagged.lines().nth(1).unwrap();
 
     test_tree_remove();
 
     /* assertions */
 
-    assert!(output_edit.contains(&n_edit));
-    assert!(output_edit.contains(&content_script_line_tagged));
+    assert!(output.contains(&n_script));
+    assert!(output.contains(&content_script_line_tagged));
+    assert!(source.contains(&content_source_preface));
+    assert!(source.contains(&content_source_script_body));
+    assert_eq!(content_script_line_tagged, source_line);
 
-    assert!(source_edit.contains(&content_source_preface));
-    assert_eq!(content_script_line_tagged, source_edit_line);
-    assert_eq!(content_script_line_tagged, source_edit_tagged_line);
-    assert!(source_edit.contains(&content_source_script_body));
+    assert!(output_tagged.contains(&n_script));
+    assert!(output_tagged.contains(&content_script_line_tagged));
+    assert!(source_tagged.contains(&content_source_preface));
+    assert!(source_tagged.contains(&content_source_script_body));
+    assert_eq!(content_script_line_tagged, source_tagged_line);
   }
 
   /*     - CLI options: version, help */

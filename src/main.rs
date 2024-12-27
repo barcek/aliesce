@@ -90,7 +90,7 @@ fn cli_options_get(config: &Config) -> Vec<CLIOption> {
     CLIOption::new(
       "init", "i", &[],
       &format!(
-        "add a source at the default path ('{}') then exit",
+        "create the source file SOURCE (def. '{}') then exit",
         config.defaults.get("path_src").unwrap()
       ),
       &cli_option_init_apply
@@ -822,7 +822,7 @@ fn cli_option_push_apply(config: &Config, _0: &[CLIOption], strs: Vec<String>) -
 fn cli_option_init_apply(config: &Config, _0: &[CLIOption], _1: Vec<String>) -> ConfigRecsVal {
 
   let [file, line, main, plus, pipe] = doc_lines_get(&config);
-  let src = &config.defaults.get("path_src").unwrap();
+  let src = &config.get_path_src();
 
   let content = format!("\
     <any arguments to aliesce (run 'aliesce --help' for options)>\n\n\

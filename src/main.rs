@@ -1096,38 +1096,61 @@ mod test {
 
   /*   - end-to-end */
 
-  /*     - functions: stdin read, CLI options */
+  /*     - stdin read, CLI options */
 
-  fn test_values_script_get(path_dir: &String, n: u8) -> (String, String) {
+  fn test_values_script_get(path_dir: &String, n: u8) -> (String, String, String, String, String) {
+    let output_filename = format!("test_{n}.sh");
+    let string = format!("Running {n}");
+    let output = format!("{string}\n");
     (
       format!("{path_dir}/script_{n}.txt"),
-      format!("echo \"Running {n}\"\n")
+      format!(">/{output_filename} sh"),
+      format!("echo \"{string}\"\n"),
+      output_filename,
+      output
     )
   }
 
-  fn test_values_end_to_end_get() -> [String; 14] {
+  fn test_values_end_to_end_get() -> [String; 23] {
 
     let path_dir = String::from(PATH_TMP_DIR_TEST);
-    let path_source = format!("{path_dir}/source.txt");
+    let path_dir_scripts = format!("{path_dir}/scripts");
+    let path_source      = format!("{path_dir}/source.txt");
 
-    let (path_script_1, content_script_body_1) = test_values_script_get(&path_dir, 1);
-    let (path_script_2, content_script_body_2) = test_values_script_get(&path_dir, 2);
-    let (path_script_3, content_script_body_3) = test_values_script_get(&path_dir, 3);
+    let (
+      path_script_1, content_script_line_base_1, content_script_body_1,
+      content_script_output_filename_1, content_script_output_1
+    ) = test_values_script_get(&path_dir, 1);
+    let (
+      path_script_2, content_script_line_base_2, content_script_body_2,
+      content_script_output_filename_2, content_script_output_2
+    ) = test_values_script_get(&path_dir, 2);
+    let (
+      path_script_3, _,                          content_script_body_3,
+       _,                                content_script_output_3
+    ) = test_values_script_get(&path_dir, 3);
 
     let content_source_preface = String::from("Test preface\n");
     let content_source_script_line = format!("{} sh sh\n", DEFAULTS[3].1);
     let content_source_script_body = format!("echo \"Running initial\"\n");
-    let content_source = format!("{content_source_preface}{content_source_script_line}{content_source_script_body}");
 
-    let content_script_line_untagged = format!(">/test.sh sh");
-    let content_script_line_tagged = format!("{} {content_script_line_untagged}", DEFAULTS[3].1);
-    let content_script_line_tagged_bypass = format!("{} {}", DEFAULTS[3].1, DEFAULTS[5].1);
+    let content_source_single = format!("{content_source_preface}{content_source_script_line}{content_source_script_body}");
+
+    let content_script_line_label = format!("Test label");
+
+    let content_script_line_tagged          = format!("{} {content_script_line_base_1}", DEFAULTS[3].1);
+    let content_script_line_tagged_labelled = format!("{} {content_script_line_label} {} {content_script_line_base_2}", DEFAULTS[3].1, DEFAULTS[4].1);
+    let content_script_line_tagged_bypass   = format!("{} {}", DEFAULTS[3].1, DEFAULTS[5].1);
+
+    let content_source_triple = format!("{content_source_preface}{content_script_line_tagged}\n{content_script_body_1}{content_script_line_tagged_labelled}\n{content_script_body_2}{content_script_line_tagged_bypass}\n{content_script_body_3}");
 
     [
-      path_dir, path_source, path_script_1, path_script_2, path_script_3,
-      content_source_preface, content_source_script_body, content_source,
-      content_script_line_untagged, content_script_line_tagged, content_script_line_tagged_bypass,
-      content_script_body_1, content_script_body_2, content_script_body_3
+      path_dir, path_dir_scripts, path_source, path_script_1, path_script_2, path_script_3,
+      content_script_output_filename_1, content_script_output_filename_2,
+      content_source_preface, content_source_script_body, content_source_single, content_source_triple,
+      content_script_line_base_1, content_script_line_base_2, content_script_line_tagged, content_script_line_tagged_bypass, content_script_line_label,
+      content_script_body_1, content_script_body_2, content_script_body_3,
+      content_script_output_1, content_script_output_2, content_script_output_3
     ]
   }
 
@@ -1152,15 +1175,17 @@ mod test {
   fn test_stdin_read_run(input_delimiter: &str) -> () {
 
     let [
-      _, path_source, path_script_1, path_script_2, path_script_3,
-      _, _, content_source,
-      _, _, content_script_line_tagged_bypass,
-      content_script_body_1, content_script_body_2, content_script_body_3
+      _, _, path_source, path_script_1, path_script_2, path_script_3,
+      _, _,
+      _, _, content_source_single, _,
+      _, _, _, content_script_line_tagged_bypass, _,
+      content_script_body_1, content_script_body_2, content_script_body_3,
+      _, _, _
     ] = test_values_end_to_end_get();
 
     /* setup - add temporary test directory w/ content */
     test_tree_create(Vec::from([
-      [&path_source,   &content_source,        "test source"       ],
+      [&path_source,   &content_source_single, "test source"       ],
       [&path_script_1, &content_script_body_1, "test script 1 body"],
       [&path_script_2, &content_script_body_2, "test script 2 body"],
       [&path_script_3, &content_script_body_3, "test script 3 body"]
@@ -1203,7 +1228,7 @@ mod test {
     assert!(output.contains(&path_script_2));
     assert!(output.contains(&path_script_3));
 
-    assert!(source.contains(&content_source));
+    assert!(source.contains(&content_source_single));
     assert_eq!(content_script_line_tagged_bypass, source_line_1);
     assert_eq!(content_script_line_tagged_bypass, source_line_2);
     assert_eq!(content_script_line_tagged_bypass, source_line_3);
@@ -1222,28 +1247,272 @@ mod test {
     test_stdin_read_run(input_delimiter_2);
   }
 
-  /*     - CLI options: push, edit */
+  /*     - CLI options */
 
   #[test]
-  fn cli_option_push() {
+  fn cli_option_dest() {
 
     let [
-      _, path_source, path_script, _, _,
-      _, _, content_source,
-      content_script_line_untagged, content_script_line_tagged, _,
-      content_script_body, _, _
+      _, path_dir_scripts, path_source, _, _, _,
+      content_script_output_filename_1, content_script_output_filename_2,
+      _, _, _, content_source_triple,
+      _, _, _, _, _,
+      content_script_body_1, content_script_body_2, _,
+      content_script_output_1, content_script_output_2, _
     ] = test_values_end_to_end_get();
 
     /* setup - add temporary test directory w/ content */
     test_tree_create(Vec::from([
-      [&path_source, &content_source,      "test source"     ],
-      [&path_script, &content_script_body, "test script body"]
+      [&path_source, &content_source_triple, "test source"]
     ]));
 
     /* acquisitions */
 
     let output_raw = process::Command::new("cargo")
-      .args(Vec::from(["run", "--", "-p", &content_script_line_untagged, &path_script, &path_source]))
+      .args(Vec::from(["run", "--", "-d", &path_dir_scripts, &path_source]))
+      .output()
+      .unwrap();
+
+    let output = String::from_utf8_lossy(&output_raw.stdout);
+
+    let scripts = fs::read_dir(&path_dir_scripts).unwrap()
+      .map(|e| e.unwrap().path().display().to_string())
+      .collect::<Vec<_>>();
+    let scripts_path_1 = format!("{path_dir_scripts}/{content_script_output_filename_1}");
+    let scripts_path_2 = format!("{path_dir_scripts}/{content_script_output_filename_2}");
+    let scripts_body_1 = fs::read_to_string(&scripts_path_1).unwrap();
+    let scripts_body_2 = fs::read_to_string(&scripts_path_2).unwrap();
+
+    test_tree_remove();
+
+    /* assertions */
+
+    assert_eq!(output.to_string(), format!("{content_script_output_1}{content_script_output_2}"));
+
+    assert_eq!(scripts.len(), 2);
+    assert!(scripts.contains(&scripts_path_1));
+    assert!(content_script_body_1.contains(&scripts_body_1));
+    assert!(scripts.contains(&scripts_path_2));
+    assert!(content_script_body_2.contains(&scripts_body_2));
+  }
+
+  #[test]
+  fn cli_option_only_incl_dest() {
+
+    let [
+      _, path_dir_scripts, path_source, _, _, _,
+      content_script_output_filename_1, content_script_output_filename_2,
+      _, _, _, content_source_triple,
+      _, _, _, _, _,
+      content_script_body_1, content_script_body_2, _,
+      content_script_output_1, content_script_output_2, _
+    ] = test_values_end_to_end_get();
+
+    /* setup - one - add temporary test directory w/ content */
+    test_tree_create(Vec::from([
+      [&path_source, &content_source_triple, "test source"]
+    ]));
+
+    /* acquisitions - one */
+
+    let output_one_raw = process::Command::new("cargo")
+      .args(Vec::from(["run", "--", "-d", &path_dir_scripts, "-o", "1", &path_source]))
+      .output()
+      .unwrap();
+
+    let output_one = String::from_utf8_lossy(&output_one_raw.stdout);
+
+    let scripts_one = fs::read_dir(&path_dir_scripts).unwrap()
+      .map(|e| e.unwrap().path().display().to_string())
+      .collect::<Vec<_>>();
+    let scripts_one_path_1 = format!("{path_dir_scripts}/{content_script_output_filename_1}");
+    let scripts_one_body_1 = fs::read_to_string(&scripts_one_path_1).unwrap();
+
+    test_tree_remove();
+
+    /* setup - two - add temporary test directory w/ content */
+    test_tree_create(Vec::from([
+      [&path_source, &content_source_triple, "test source"]
+    ]));
+
+    /* acquisitions - two */
+
+    let output_two_raw = process::Command::new("cargo")
+      .args(Vec::from(["run", "--", "-d", &path_dir_scripts, "-o", "2-3", &path_source]))
+      .output()
+      .unwrap();
+
+    let output_two = String::from_utf8_lossy(&output_two_raw.stdout);
+
+    let scripts_two = fs::read_dir(&path_dir_scripts).unwrap()
+      .map(|e| e.unwrap().path().display().to_string())
+      .collect::<Vec<_>>();
+    let scripts_two_path_2 = format!("{path_dir_scripts}/{content_script_output_filename_2}");
+    let scripts_two_body_2 = fs::read_to_string(&scripts_two_path_2).unwrap();
+
+    test_tree_remove();
+
+    /* setup - two - add temporary test directory w/ content */
+    test_tree_create(Vec::from([
+      [&path_source, &content_source_triple, "test source"]
+    ]));
+
+    /* acquisitions - all */
+
+    let output_all_raw = process::Command::new("cargo")
+      .args(Vec::from(["run", "--", "-d", &path_dir_scripts, "-o", "1,2-3", &path_source]))
+      .output()
+      .unwrap();
+
+    let output_all = String::from_utf8_lossy(&output_all_raw.stdout);
+
+    let scripts_all = fs::read_dir(&path_dir_scripts).unwrap()
+      .map(|e| e.unwrap().path().display().to_string())
+      .collect::<Vec<_>>();
+    let scripts_all_path_1 = format!("{path_dir_scripts}/{content_script_output_filename_1}");
+    let scripts_all_path_2 = format!("{path_dir_scripts}/{content_script_output_filename_2}");
+    let scripts_all_body_1 = fs::read_to_string(&scripts_all_path_1).unwrap();
+    let scripts_all_body_2 = fs::read_to_string(&scripts_all_path_2).unwrap();
+
+    test_tree_remove();
+
+    /* assertions - one */
+
+    assert_eq!(output_one.to_string(), format!("{content_script_output_1}"));
+
+    assert_eq!(scripts_one.len(), 1);
+    assert!(scripts_one.contains(&scripts_one_path_1));
+    assert!(content_script_body_1.contains(&scripts_one_body_1));
+
+    /* assertions - two */
+
+    assert_eq!(output_two.to_string(), format!("{content_script_output_2}"));
+
+    assert_eq!(scripts_two.len(), 1);
+    assert!(scripts_two.contains(&scripts_two_path_2));
+    assert!(content_script_body_2.contains(&scripts_two_body_2));
+
+    /* assertions - all */
+
+    assert_eq!(output_all.to_string(), format!("{content_script_output_1}{content_script_output_2}"));
+
+    assert_eq!(scripts_all.len(), 2);
+    assert!(scripts_all.contains(&scripts_all_path_1));
+    assert!(content_script_body_1.contains(&scripts_all_body_1));
+    assert!(scripts_all.contains(&scripts_all_path_2));
+    assert!(content_script_body_2.contains(&scripts_all_body_2));
+  }
+
+  #[test]
+  fn cli_option_list() {
+
+    let [
+      _, _, path_source, _, _, _,
+      _, _,
+      _, _, _, content_source_triple,
+      content_script_line_base_1, content_script_line_base_2, _, _, content_script_line_label,
+      _, _, _,
+      _, _, _
+    ] = test_values_end_to_end_get();
+
+    /* setup - add temporary test directory w/ content */
+    test_tree_create(Vec::from([
+      [&path_source, &content_source_triple, "test source"]
+    ]));
+
+    /* acquisitions */
+
+    let output_raw = process::Command::new("cargo")
+      .args(Vec::from(["run", "--", "-l", &path_source]))
+      .output()
+      .unwrap();
+
+    let output = String::from_utf8_lossy(&output_raw.stdout);
+    let output_lines = output
+      .lines()
+      .collect::<Vec<_>>();
+
+    test_tree_remove();
+
+    /* assertions */
+
+    assert!(output_lines[0].contains("1"));
+    assert!(output_lines[0].contains(&content_script_line_base_1));
+
+    assert!(output_lines[1].contains("2"));
+    assert!(output_lines[1].contains(&content_script_line_label));
+    assert!(output_lines[1].contains(&content_script_line_base_2));
+
+    assert!(output_lines[2].contains("3"));
+    assert!(output_lines[2].contains(DEFAULTS[5].1));
+  }
+
+  #[test]
+  fn cli_option_init() {
+
+    let [
+      _, _, path_source, _, _, _,
+      _, _,
+      _, _, _, _,
+      _, _, _, _, _,
+      _, _, _,
+      _, _, _
+    ] = test_values_end_to_end_get();
+
+    /* setup - add temporary test directory w/ content */
+    test_tree_create(Vec::new());
+
+    /* acquisitions */
+
+    let output_raw = process::Command::new("cargo")
+      .args(Vec::from(["run", "--", "-i", &path_source]))
+      .output()
+      .unwrap();
+
+    let output = String::from_utf8_lossy(&output_raw.stdout);
+    let source = fs::read_to_string(&path_source)
+      .unwrap_or_else(|_| panic!("reading from test source"));
+
+    let config_init = Config {
+      defaults: HashMap::from(DEFAULTS),
+      receipts: HashMap::new()
+    };
+    let doc_lines = doc_lines_get(&config_init);
+
+    test_tree_remove();
+
+    /* assertions */
+
+    assert!(output.contains(&path_source));
+    assert!(source.contains(&doc_lines[0]));
+    assert!(source.contains(&doc_lines[1]));
+    assert!(source.contains(&doc_lines[2]));
+    assert!(source.contains(&doc_lines[3]));
+    assert!(source.contains(&doc_lines[4]));
+  }
+
+  #[test]
+  fn cli_option_push() {
+
+    let [
+      _, _, path_source, path_script, _, _,
+      _, _,
+      _, _, content_source_single, _,
+      content_script_line_base_1, _, content_script_line_tagged, _, _,
+      content_script_body, _, _,
+      _, _, _
+    ] = test_values_end_to_end_get();
+
+    /* setup - add temporary test directory w/ content */
+    test_tree_create(Vec::from([
+      [&path_source, &content_source_single, "test source"     ],
+      [&path_script, &content_script_body,   "test script body"]
+    ]));
+
+    /* acquisitions */
+
+    let output_raw = process::Command::new("cargo")
+      .args(Vec::from(["run", "--", "-p", &content_script_line_base_1, &path_script, &path_source]))
       .output()
       .unwrap();
     let output = String::from_utf8_lossy(&output_raw.stdout);
@@ -1266,13 +1535,13 @@ mod test {
 
     assert!(output.contains(&content_script_line_tagged));
     assert!(output.contains(&path_script));
-    assert!(source.contains(&content_source));
+    assert!(source.contains(&content_source_single));
     assert!(source.contains(&content_script_body));
     assert_eq!(content_script_line_tagged, source_line);
 
     assert!(output_tagged.contains(&content_script_line_tagged));
     assert!(output_tagged.contains(&path_script));
-    assert!(source_tagged.contains(&content_source));
+    assert!(source_tagged.contains(&content_source_single));
     assert!(source_tagged.contains(&content_script_body));
     assert_eq!(content_script_line_tagged, source_tagged_line);
   }
@@ -1281,15 +1550,17 @@ mod test {
   fn cli_option_edit() {
 
     let [
-      _, path_source, _, _, _,
-      content_source_preface, content_source_script_body, content_source,
-      content_script_line_untagged, content_script_line_tagged, _,
+      _, _, path_source, _, _, _,
+      _, _,
+      content_source_preface, content_source_script_body, content_source_single, _,
+      content_script_line_base_1, _, content_script_line_tagged, _, _,
+      _, _, _,
       _, _, _
     ] = test_values_end_to_end_get();
 
     /* setup - add temporary test directory w/ content */
     test_tree_create(Vec::from([
-      [&path_source, &content_source, "test source"]
+      [&path_source, &content_source_single, "test source"]
     ]));
 
     let n_script = "1";
@@ -1297,7 +1568,7 @@ mod test {
     /* acquisitions */
 
     let output_raw = process::Command::new("cargo")
-      .args(Vec::from(["run", "--", "-e", &n_script, &content_script_line_untagged, &path_source]))
+      .args(Vec::from(["run", "--", "-e", &n_script, &content_script_line_base_1, &path_source]))
       .output()
       .unwrap();
     let output = String::from_utf8_lossy(&output_raw.stdout);
@@ -1330,8 +1601,6 @@ mod test {
     assert!(source_tagged.contains(&content_source_script_body));
     assert_eq!(content_script_line_tagged, source_tagged_line);
   }
-
-  /*     - CLI options: version, help */
 
   #[test]
   fn cli_option_version() {

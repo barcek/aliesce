@@ -138,7 +138,7 @@ The following can be passed to `aliesce` before any source file path:
 - `--only` / `-o`  `SUBSET`, to include only the scripts the numbers of which appear in `SUBSET`, comma-separated and/or as ranges, e.g. `-o 1,3-5`
 - `--push` / `-p`  `LINE` `PATH`, to append to the source (def. 'src.txt') `LINE`, adding the tag head if none, followed by the content at `PATH` then exit
 - `--edit` / `-e`  `N` `LINE`, to update the tag line for script number N to LINE, adding the tag head if none, then exit
-- `--init` / `-i`, to add a source at the default path ('src.txt') then exit
+- `--init` / `-i`, to create a source (def. 'src.txt') then exit
 - `--version` / `-v`, to show name and version number then exit
 - `--help` / `-h`, to show usage, flags available and notes then exit
 

@@ -5,10 +5,10 @@
 
       main / SOURCE PROCESSING
       - imports
-      - SETTINGS, incl. DEFAULTS, CLI OPTIONS
-      - OVERVIEW, incl. DOC LINES, MAIN
+      - CONFIGURATION
+        - DEFAULTS, settings & messages
+        - MAIN
       - data structures
-        - configuration (Config etc.)
         - consolidation (Source, Script, Output etc.)
       - utility functions, remaining
       - primary functions, remaining
@@ -19,13 +19,13 @@
       args / ARGUMENT HANDLING
       - imports
       - data structures
+        - configuration (Config etc.)
       - argument applicators ('version', 'help')
       - utility functions
       - primary functions, remaining
 
       test / UNIT TESTING
       - imports
-      - SETTING, i.e. test directory path
       - test cases
         - end-to-end
         - unit
@@ -45,9 +45,19 @@ use std::fs;
 use std::process;
 use std::collections::HashMap;
 
-use crate::args::{CLIOption, config_update};
+use crate::args::{
+  Config,
+  ConfigDefaults,
+  ConfigSettings,
+  ConfigMessages,
+  ConfigReceipts,
+  ConfigSetting,
+  ConfigReceiptVal
+};
 
-/* - SETTINGS, incl. DEFAULTS, CLI OPTIONS */
+/* - CONFIGURATION */
+
+/*   - DEFAULTS, settings & messages */
 
 static DEFAULTS: [(&str, &str); 10] = [
   ("path_src",     "src.txt"     ), /* source file path (incl. output stem) */
@@ -62,108 +72,128 @@ static DEFAULTS: [(&str, &str); 10] = [
   ("cmd_flag",     "-c"          )
 ];
 
-fn cli_options_get(config: &Config) -> Vec<CLIOption> {
+fn settings_new(defaults: &ConfigDefaults) -> ConfigSettings {
 
   Vec::from([
 
-    CLIOption::new(
+    ConfigSetting::new(
       "list", "l", &[],
       &format!(
         "print for each script in SOURCE (def. '{}') its number and tag line content, without saving or running",
-        config.defaults.get("path_src").unwrap()
+        defaults.get("path_src").expect("get default value 'path_src'")
       ),
-      &cli_option_list_apply
+      &setting_list_apply
     ),
-    CLIOption::new(
+    ConfigSetting::new(
       "only", "o", &["SUBSET"],
       "include only the scripts the numbers of which appear in SUBSET, comma-separated and/or as ranges, e.g. -o 1,3-5",
-      &cli_option_only_apply
+      &setting_only_apply
     ),
-    CLIOption::new(
+    ConfigSetting::new(
       "dest", "d", &["DIRNAME"],
       &format!(
         "set the default output dirname ('{}') to DIRNAME",
-        config.defaults.get("path_dir").unwrap()
+        defaults.get("path_dir").expect("get default value 'path_dir'")
       ),
-      &cli_option_dest_apply
+      &setting_dest_apply
     ),
-    CLIOption::new(
+    ConfigSetting::new(
       "init", "i", &[],
       &format!(
         "create the source file SOURCE (def. '{}') then exit",
-        config.defaults.get("path_src").unwrap()
+        defaults.get("path_src").expect("get default value 'path_src'")
       ),
-      &cli_option_init_apply
+      &setting_init_apply
     ),
-    CLIOption::new(
+    ConfigSetting::new(
       "push", "p", &["LINE", "PATH"],
       &format!(
         "append to SOURCE (def. '{}') LINE, adding the tag head if none, followed by the content at PATH then exit",
-        config.defaults.get("path_src").unwrap()
+        defaults.get("path_src").expect("get default value 'path_src'")
       ),
-      &cli_option_push_apply
+      &setting_push_apply
     ),
-    CLIOption::new(
+    ConfigSetting::new(
       "edit", "e", &["N", "LINE"],
       "update the tag line for script number N to LINE, adding the tag head if none, then exit",
-      &cli_option_edit_apply
+      &setting_edit_apply
     ),
-    CLIOption::new_version(),
-    CLIOption::new_help()
+    ConfigSetting::new_version(),
+    ConfigSetting::new_help()
   ])
 }
 
-/* - OVERVIEW, incl. DOC LINES, MAIN */
+fn messages_new(defaults: &ConfigDefaults) -> ConfigMessages<'static> {
 
-fn doc_lines_get(config: &Config) -> [String; 5] {
+  let repository = [
+    (
+      "file", format!(
+        "The default source path is '{}'. Each script in the file is preceded by a tag line begun with the tag head ('{}') and an optional label and tail ('{}'):",
+        defaults.get("path_src").expect("get default value 'path_src'"),
+        defaults.get("tag_head").expect("get default value 'tag_head'"),
+        defaults.get("tag_tail").expect("get default value 'tag_tail'")
+      )
+    ),
+    (
+      "line", format!(
+        "{}[ label {}] <OUTPUT EXTENSION / PATH: [[[.../]dirname/]stem.]ext> <COMMAND>",
+        defaults.get("tag_head").expect("get default value 'tag_head'"),
+        defaults.get("tag_tail").expect("get default value 'tag_tail'")
+      )
+    ),
+    (
+      "main", format!(
+        "Each script is saved with the default output directory ('{}'), source file stem and OUTPUT EXTENSION, or a PATH overriding stem and/or directory, then the COMMAND is run with the save path appended. The '{}' placeholder can be used in the COMMAND to override path position and have the COMMAND passed to '{} {}'; where a script no. is included ('{}') the save path of that script is applied.",
+        defaults.get("path_dir").expect("get default value 'path_dir'"),
+        defaults.get("plc_path_all").expect("get default value 'plc_path_all'").replace("{}", ""),
+        defaults.get("cmd_prog").expect("get default value 'cmd_prog'"),
+        defaults.get("cmd_flag").expect("get default value 'cmd_flag'"),
+        defaults.get("plc_path_all").expect("get default value 'plc_path_all'").replace("{}", "n")
+      )
+    ),
+    (
+      "plus", format!(
+        "The '{}' signal can be used before the EXTENSION etc. to avoid both the save and run stages, or before the COMMAND to avoid run only. The '{}' placeholder can be used in a full PATH to denote the default or overridden output directory name.",
+        defaults.get("sig_stop").expect("get default value 'sig_stop'"),
+        defaults.get("plc_path_dir").expect("get default value 'plc_path_dir'")
+      )
+    ),
+    (
+      "pipe", format!(
+        "One or more file paths can be piped to aliesce to append the content at each to the source as a script, auto-preceded by a tag line with a base '{}', then exit.",
+        defaults.get("sig_stop").expect("get default value 'sig_stop'")
+      )
+    )
+  ];
 
-  let file = format!(
-    "The default source path is '{}'. Each script in the file is preceded by a tag line begun with the tag head ('{}') and an optional label and tail ('{}'):",
-    config.defaults.get("path_src").unwrap(),
-    config.defaults.get("tag_head").unwrap(),
-    config.defaults.get("tag_tail").unwrap()
-  );
-  let line = format!(
-    "{}[ label {}] <OUTPUT EXTENSION / PATH: [[[.../]dirname/]stem.]ext> <COMMAND>",
-    config.defaults.get("tag_head").unwrap(),
-    config.defaults.get("tag_tail").unwrap()
-  );
-  let main = format!(
-    "Each script is saved with the default output directory ('{}'), source file stem and OUTPUT EXTENSION, or a PATH overriding stem and/or directory, then the COMMAND is run with the save path appended. The '{}' placeholder can be used in the COMMAND to override path position and have the COMMAND passed to '{} {}'; where a script no. is included ('{}') the save path of that script is applied.",
-    config.defaults.get("path_dir").unwrap(),
-    config.defaults.get("plc_path_all").unwrap().replace("{}", ""),
-    config.defaults.get("cmd_prog").unwrap(),
-    config.defaults.get("cmd_flag").unwrap(),
-    config.defaults.get("plc_path_all").unwrap().replace("{}", "n")
-  );
-  let plus = format!(
-    "The '{}' signal can be used before the EXTENSION etc. to avoid both the save and run stages, or before the COMMAND to avoid run only. The '{}' placeholder can be used in a full PATH to denote the default or overridden output directory name.",
-    config.defaults.get("sig_stop").unwrap(),
-    config.defaults.get("plc_path_dir").unwrap()
-  );
-  let pipe = format!(
-    "One or more file paths can be piped to aliesce to append the content at each to the source as a script, auto-preceded by a tag line with a base '{}', then exit.",
-    config.defaults.get("sig_stop").unwrap()
-  );
-
-  [file, line, main, plus, pipe]
+  ConfigMessages {
+    repository: HashMap::from(repository),
+    keys_notes: Vec::from(["file", "line", "main", "plus", "pipe"])
+  }
 }
+
+/*   - MAIN */
 
 fn main() {
 
   /* INITIAL SETUP */
 
+  let defaults = HashMap::from(DEFAULTS);
+  let settings = settings_new(&defaults);
+  let messages = messages_new(&defaults);
+
   let config_init = Config {
-    defaults: HashMap::from(DEFAULTS),
+    defaults,
+    settings,
+    messages,
     receipts: HashMap::new()
   };
-  let cli_options = cli_options_get(&config_init);
 
   /* update config for args passed to command */
   let args_on_cli = env::args()
     .skip(1)
     .collect::<Vec<_>>();
-  let config_base = config_update(config_init, &cli_options, &args_remaining_cli_apply, args_on_cli);
+  let config_base = Config::receive(config_init, &args_remaining_cli_apply, args_on_cli);
 
   /* SOURCE APPEND VIA STDIN */
 
@@ -179,7 +209,7 @@ fn main() {
     .map(|part| part.trim().to_string())
     .filter(|part| !part.is_empty())
     .collect::<Vec<_>>();
-  let config_full = config_update(config_base, &cli_options, &args_remaining_src_apply, args_in_src);
+  let config_full = Config::receive(config_base, &args_remaining_src_apply, args_in_src);
 
   if_change_in_args_make_then_exit(&source, &config_full);
 
@@ -194,41 +224,6 @@ fn main() {
 }
 
 /* - data structures */
-
-/*   - configuration */
-
-pub struct Config<'a> {
-  defaults: HashMap<&'a str, &'a str>,
-  receipts: HashMap<String, ConfigRecsVal>
-}
-
-impl Config<'_> {
-  /* handle any positional argument - alternative source file path */
-  fn get_path_src(&self) -> String {
-    if self.receipts.contains_key("path_src") {
-      if let ConfigRecsVal::Strs(val_strs) = self.receipts.get("path_src").unwrap() {
-        return val_strs.get(0).unwrap().to_string();
-      }
-    }
-    String::from(*self.defaults.get("path_src").unwrap())
-  }
-  /* handle option - dest - alternative output directory name */
-  fn get_path_dir(&self) -> String {
-    if self.receipts.contains_key("dest") {
-      if let ConfigRecsVal::Strs(val_strs) = self.receipts.get("dest").unwrap() {
-        return val_strs.get(0).unwrap().to_string();
-      }
-    }
-    String::from(*self.defaults.get("path_dir").unwrap())
-  }
-}
-
-#[derive(PartialEq, Eq)]
-pub enum ConfigRecsVal {
-  Bool,
-  Ints(Vec<usize>),
-  Strs(Vec<String>)
-}
 
 /*   - consolidation */
 
@@ -280,7 +275,7 @@ struct OutputFile {
 impl OutputFile {
   fn new(data: Vec<String>, code: String, n: usize, config: &Config) -> OutputFile {
 
-    let Config { defaults, receipts: _ } = config;
+    let Config { defaults, receipts: _, .. } = config;
 
     /* set output path parts */
 
@@ -288,7 +283,7 @@ impl OutputFile {
     let mut parts_path = data.get(0).unwrap()
       .split('/')
       .collect::<Vec<_>>();
-    let path_dir = config.get_path_dir();
+    let path_dir = config.get("dest", "path_dir");
 
     /* handle output directory identified by directory placeholder */
     if defaults.get("plc_path_dir").unwrap() == &parts_path[0] { parts_path[0] = path_dir.as_str() };
@@ -310,7 +305,7 @@ impl OutputFile {
       parts_filename[..(p_f_len - 1)]
         .join(".")
     } else {
-      config.get_path_src()
+      config.get("path_src", "path_src")
         .split('.')
         .nth(0)
         .unwrap()
@@ -465,14 +460,14 @@ fn script_push(config: &Config, strs: Vec<String>) {
 
   let summary_base = format!(
     "tag line '{tag_line}' and content of script file '{script_filename}' to source file '{}'",
-    config.get_path_src()
+    config.get("path_src", "path_src")
   );
   let summary_failure = format!("Not appending {summary_base}");
   let summary_success = format!("Appended {summary_base}");
 
   fs::OpenOptions::new()
     .append(true)
-    .open(config.get_path_src())
+    .open(config.get("path_src", "path_src"))
     .unwrap_or_else(|e| error_handle((
       &summary_failure,
       Some("open"),
@@ -557,7 +552,7 @@ fn if_paths_on_stdin_push_then_exit(config: &Config) {
 fn if_change_in_args_make_then_exit(source: &Source, config: &Config) {
 
   let args = match config.receipts.get("edit") {
-    Some(ConfigRecsVal::Strs(s)) => s.to_owned(),
+    Some(ConfigReceiptVal::Strs(s)) => s.to_owned(),
     _                            => Vec::new()
   };
 
@@ -580,7 +575,7 @@ fn if_change_in_args_make_then_exit(source: &Source, config: &Config) {
     let text = format!("{}{source_scripts}", source.preface);
 
     /* write source to file, with backup to then removal of temporary directory */
-    let path_src      = config.get_path_src();
+    let path_src      = config.get("path_src", "path_src");
     let path_src_inst = Path::new(&path_src);
     let path_src_stem = path_src_inst.file_stem().unwrap().to_str().unwrap();
     let path_src_ext  = path_src_inst.extension().unwrap().to_str().unwrap();
@@ -609,19 +604,22 @@ fn if_change_in_args_make_then_exit(source: &Source, config: &Config) {
 
 fn source_get(config: &Config) -> Source {
 
-  let [doc_line_file, doc_line_line, _, _, _] = &doc_lines_get(&config);
+  let doc_line_file = config.messages.repository.get("file")
+    .expect("get message 'file' from configuration");
+  let doc_line_line = config.messages.repository.get("line")
+    .expect("get message 'line' from configuration");
 
   /* load source file content as string or exit early */
-  let sections = fs::read_to_string(&config.get_path_src())
+  let sections = fs::read_to_string(&config.get("path_src", "path_src"))
     .unwrap_or_else(|e| error_handle((
-      &format!("Not parsing source file '{}'", config.get_path_src()),
+      &format!("Not parsing source file '{}'", config.get("path_src", "path_src")),
       Some("read"),
       Some(e)
     )))
     /* set any init option text with tag head to placeholder */
     .lines()
-    .map(|l| if doc_line_file == l { "plc_doc_line_file" } else { l })
-    .map(|l| if doc_line_line == l { "plc_doc_line_line" } else { l })
+    .map(|l| if doc_line_file == &l { "plc_doc_line_file" } else { l })
+    .map(|l| if doc_line_line == &l { "plc_doc_line_line" } else { l })
     .collect::<Vec<_>>()
     .join("\n")
     /* get args section plus each source string (script with tag line minus tag head) numbered */
@@ -651,7 +649,7 @@ fn source_get(config: &Config) -> Source {
 fn inputs_parse(script: &Script, config: &Config) -> Output {
 
   let Script { n, line, body } = script;
-  let Config { defaults, receipts } = config;
+  let Config { defaults, receipts, .. } = config;
 
   /* get label and data from tag line */
   let line_sections = match line.find(defaults.get("tag_tail").unwrap()) {
@@ -695,7 +693,7 @@ fn outputs_get(source: Source, config: &Config) -> Vec<Output> {
     .iter()
     /* handle option - only - allow subset */
     .filter(|script| !config.receipts.contains_key("only") || match config.receipts.get("only").unwrap() {
-      ConfigRecsVal::Ints(ns) => ns.contains(&script.n),
+      ConfigReceiptVal::Ints(ns) => ns.contains(&script.n),
       _                       => false
     })
     /* parse input set to output instance */
@@ -781,19 +779,19 @@ fn output_exec(output: &OutputFile, context: &HashMap<usize, String>) {
 
 /*   - argument applicators */
 
-fn cli_option_dest_apply(_0: &Config, _1: &[CLIOption], strs: Vec<String>) -> ConfigRecsVal {
-  ConfigRecsVal::Strs(strs)
+fn setting_dest_apply(_: &Config, strs: Vec<String>) -> ConfigReceiptVal {
+  ConfigReceiptVal::Strs(strs)
 }
 
-fn cli_option_edit_apply(_0: &Config, _1: &[CLIOption], strs: Vec<String>) -> ConfigRecsVal {
-  ConfigRecsVal::Strs(strs)
+fn setting_edit_apply(_: &Config, strs: Vec<String>) -> ConfigReceiptVal {
+  ConfigReceiptVal::Strs(strs)
 }
 
-fn cli_option_list_apply(_0: &Config, _1: &[CLIOption], _2: Vec<String>) -> ConfigRecsVal {
-  ConfigRecsVal::Bool
+fn setting_list_apply(_0: &Config, _1: Vec<String>) -> ConfigReceiptVal {
+  ConfigReceiptVal::Bool
 }
 
-fn cli_option_only_apply(_0: &Config, _1: &[CLIOption], strs: Vec<String>) -> ConfigRecsVal {
+fn setting_only_apply(_: &Config, strs: Vec<String>) -> ConfigReceiptVal {
   let val_ints = strs[0]
     .trim()
     .split(',')
@@ -811,45 +809,48 @@ fn cli_option_only_apply(_0: &Config, _1: &[CLIOption], strs: Vec<String>) -> Co
       }
     })
     .collect::<Vec<_>>();
-  ConfigRecsVal::Ints(val_ints)
+  ConfigReceiptVal::Ints(val_ints)
 }
 
-fn cli_option_push_apply(config: &Config, _0: &[CLIOption], strs: Vec<String>) -> ConfigRecsVal {
+fn setting_push_apply(config: &Config, strs: Vec<String>) -> ConfigReceiptVal {
   script_push(config, strs);
   process::exit(0);
 }
 
-fn cli_option_init_apply(config: &Config, _0: &[CLIOption], _1: Vec<String>) -> ConfigRecsVal {
+fn setting_init_apply(config: &Config, _: Vec<String>) -> ConfigReceiptVal {
 
-  let [file, line, main, plus, pipe] = doc_lines_get(&config);
-  let src = &config.get_path_src();
-
-  let content = format!("\
-    <any arguments to aliesce (run 'aliesce --help' for options)>\n\n\
-    Notes on source file format:\n\n\
-    {file}\n\n{main}\n\n{plus}\n\n\
-    Appending scripts via stdin:\n\n\
-    {pipe}\n\n\
-    Tag line and script section:\n\n\
-    {line}\n\n<script>\n\
-  ");
-
-  /* handle write */
-
-  let summary_failure = format!("Not creating template source file at '{src}'");
+  let src = &config.get("path_src", "path_src");
+  let summary_failure_write = format!("Not creating template source file at '{src}'");
 
   /* exit early if source file exists */
   if fs::metadata(src).is_ok() {
     error_handle((
-      &format!("{summary_failure} (path exists)"),
+      &format!("{summary_failure_write} (path exists)"),
       None,
       None
     ))
   };
 
+  let summary_expect_get = "get message from configuration for template source file";
+  let content = format!("\
+      <any arguments to aliesce (run 'aliesce --help' for options)>\n\n\
+      Notes on source file format:\n\n\
+      {}\n\n{}\n\n{}\n\n\
+      Appending scripts via stdin:\n\n\
+      {}\n\n\
+      Tag line and script section:\n\n\
+      {}\n\n<script>\n\
+    ",
+    config.messages.repository.get("file").expect(&format!("{summary_expect_get} ('file')")),
+    config.messages.repository.get("main").expect(&format!("{summary_expect_get} ('main')")),
+    config.messages.repository.get("plus").expect(&format!("{summary_expect_get} ('plus')")),
+    config.messages.repository.get("pipe").expect(&format!("{summary_expect_get} ('pipe')")),
+    config.messages.repository.get("line").expect(&format!("{summary_expect_get} ('line')"))
+  );
+
   fs::write(src, content)
     .unwrap_or_else(|e| error_handle((
-      &summary_failure,
+      &summary_failure_write,
       Some("write"),
       Some(e)
     )));
@@ -858,20 +859,19 @@ fn cli_option_init_apply(config: &Config, _0: &[CLIOption], _1: Vec<String>) -> 
   process::exit(0);
 }
 
-fn args_remaining_cli_apply(mut config: Config, args_remaining: Vec<String>) -> Config {
+fn args_remaining_cli_apply(args_remaining: Vec<String>) -> ConfigReceipts {
   /* set final source filename (incl. output stem) per positional arg */
-  let arg = String::from(if !args_remaining.is_empty() {
-    args_remaining.get(0).unwrap()
-  } else {
-    *config.defaults.get("path_src").unwrap()
-  });
-  let val = ConfigRecsVal::Strs(Vec::from([arg]));
-  config.receipts.insert(String::from("path_src"), val);
-  config
+  let mut receipts = ConfigReceipts::new();
+  if !args_remaining.is_empty() {
+    let arg = args_remaining.get(0).unwrap().clone();
+    let val = ConfigReceiptVal::Strs(Vec::from([arg]));
+    receipts.insert(String::from("path_src"), val);
+  }
+  receipts
 }
 
-fn args_remaining_src_apply(config: Config, _: Vec<String>) -> Config {
-  config
+fn args_remaining_src_apply(_: Vec<String>) -> ConfigReceipts {
+  ConfigReceipts::new()
 }
 
 /* args / ARGUMENT HANDLING */
@@ -881,22 +881,116 @@ mod args {
   /* - imports */
 
   use std::process;
-  use super::{ Config, ConfigRecsVal, doc_lines_get };
+  use std::collections::HashMap;
 
   /* - data structures */
 
-  type CLIOptionCall = dyn Fn(&Config, &[CLIOption], Vec<String>) -> ConfigRecsVal;
+  /*   - configuration */
 
-  pub struct CLIOption {
+  pub struct Config<'a> {
+    pub defaults: ConfigDefaults<'a>,
+    pub settings: ConfigSettings,
+    pub receipts: ConfigReceipts,
+    pub messages: ConfigMessages<'a>
+  }
+
+  impl Config<'_> {
+
+    pub fn receive(mut config: Config<'static>, handle_remaining: &ArgHandler, args: Vec<String>) -> Config<'static> {
+
+      let args_count: usize = args.len();
+
+      /* for each flag in args, queue setting call with any values and tally */
+      let mut settings_queued = Vec::new();
+      let mut settings_count = 0;
+      if args_count > 0 {
+        for setting in &config.settings {
+          for j in 0..args_count {
+            if ["--", &setting.word].concat() == args[j] || ["-", &setting.char].concat() == args[j] {
+              let strs_len = setting.strs.len();
+              let strs = args[(j + 1)..(j + strs_len + 1)].to_vec();
+              settings_queued.push((&setting.word, &setting.call, strs));
+              settings_count = settings_count + 1 + strs_len;
+            };
+          };
+        };
+      };
+      /* handle any remaining arguments */
+      let args_remaining = args[(settings_count)..].to_vec();
+      let receipts_args_remaining = handle_remaining(args_remaining);
+      config.receipts.extend(receipts_args_remaining);
+
+      /* make any queued setting calls */
+      if !settings_queued.is_empty() {
+        for opt_queued in &settings_queued {
+          let (word, call, strs) = &opt_queued;
+          let value = call(&config, strs.to_vec());
+          config.receipts.insert(String::from(*word), value);
+        }
+      }
+      config
+    }
+
+    pub fn get(&self, key_receipt: &str, key_default: &str) -> String {
+      if self.receipts.contains_key(key_receipt) {
+        if let ConfigReceiptVal::Strs(val_strs) = self.receipts.get(key_receipt).unwrap() {
+          return val_strs
+            .get(0)
+            .expect(&format!("get string for receipt value '{key_receipt}' from configuration"))
+            .to_string();
+        }
+      }
+      String::from(
+        *self.defaults
+          .get(key_default)
+          .expect(&format!("get default value '{key_default}' from configuration"))
+      )
+    }
+  }
+
+  pub type ConfigDefaults<'a> = HashMap<&'a str, &'a str>;
+  pub type ConfigSettings = Vec<ConfigSetting>;
+  pub type ConfigReceipts = HashMap<String, ConfigReceiptVal>;
+
+  #[derive(PartialEq, Eq)]
+  pub enum ConfigReceiptVal {
+    Bool,
+    Ints(Vec<usize>),
+    Strs(Vec<String>)
+  }
+
+  pub struct ConfigMessages<'a> {
+    pub repository: HashMap<&'a str, String>,
+    pub keys_notes: Vec<&'a str>
+  }
+
+  impl ConfigMessages<'_> {
+
+    pub fn compose_notes(&self) -> Vec<String> {
+      self.keys_notes
+        .iter()
+        .map(|k|
+          self.repository
+            .get(k)
+            .expect(&format!("get message '{k}' from configuration for notes"))
+            .to_string()
+        )
+        .collect()
+    }
+  }
+
+  type ConfigSettingCall = dyn Fn(&Config, Vec<String>) -> ConfigReceiptVal;
+
+  pub struct ConfigSetting {
     pub word: String,
     pub char: String,
     pub strs: Vec<String>,
     pub desc: String,
-        call: Box<CLIOptionCall>
+        call: Box<ConfigSettingCall>
   }
 
-  impl CLIOption {
-    pub fn new(word: &str, char: &str, val_strs: &[&str], desc: &str, call: &'static CLIOptionCall) -> CLIOption {
+  impl ConfigSetting {
+    pub fn new(word: &str, char: &str, val_strs: &[&str], desc: &str, call: &'static ConfigSettingCall) -> ConfigSetting {
       let strs = if !val_strs.is_empty() {
         val_strs
           .iter()
@@ -905,7 +999,7 @@ mod args {
       } else {
         Vec::new()
       };
-      CLIOption {
+      ConfigSetting {
         word: String::from(word),
         char: String::from(char),
         strs,
@@ -913,35 +1007,35 @@ mod args {
         call: Box::new(call)
       }
     }
-    pub fn new_version() -> CLIOption {
-      CLIOption::new("version", "v", &[], "show name and version number then exit", &cli_option_version_apply)
+    pub fn new_version() -> ConfigSetting {
+      ConfigSetting::new("version", "v", &[], "show name and version number then exit", &setting_version_apply)
     }
-    pub fn new_help() -> CLIOption {
-      CLIOption::new("help", "h", &[], "show usage, flags available and notes then exit", &cli_option_help_apply)
+    pub fn new_help() -> ConfigSetting {
+      ConfigSetting::new("help", "h", &[], "show usage, flags available and notes then exit", &setting_help_apply)
     }
   }
 
-  type CLIArgHandler = dyn Fn(Config, Vec<String>) -> Config;
+  type ArgHandler = dyn Fn(Vec<String>) -> ConfigReceipts;
 
   /* - argument applicator ('help') */
 
-  fn cli_option_version_apply(_0: &Config, _1: &[CLIOption], _2: Vec<String>) -> ConfigRecsVal {
+  fn setting_version_apply(_0: &Config, _1: Vec<String>) -> ConfigReceiptVal {
     println!("{}", name_and_version_get());
     process::exit(0);
   }
 
-  fn cli_option_help_apply(config: &Config, cli_options: &[CLIOption], _0: Vec<String>) -> ConfigRecsVal {
+  fn setting_help_apply(config: &Config, _: Vec<String>) -> ConfigReceiptVal {
 
     let line_length_max = 80;
 
     /* set value substrings and max length */
-    let strs_strs = cli_options
+    let strs_strs = config.settings
       .iter()
       .map(|o| o.strs.join(" "))
       .collect::<Vec<_>>();
     let strs_strs_max = strs_strs.iter()
       .fold(0, |acc, s| if s.len() > acc { s.len() } else { acc });
-    let flag_strs = cli_options
+    let flag_strs = config.settings
       .iter()
       .map(|o| format!("-{}, --{}", o.char, o.word))
       .collect::<Vec<_>>();
@@ -953,7 +1047,7 @@ mod args {
     let title_line = format!("{}", line_center_with_fill(&name_and_version_get(), line_length_max, "-"));
 
     /* generate usage text */
-    let usage_opts_part = cli_options
+    let usage_opts_part = config.settings
       .iter()
       .filter(|o| o.word != "version" && o.word != "help") /* avoid duplication */
       .enumerate() /* yield also index (i) */
@@ -970,7 +1064,7 @@ mod args {
     let usage_text = format!("Usage: aliesce {usage_opts_head}\n{usage_opts_tail}");
 
     /* generate flags text */
-    let flags_list = cli_options
+    let flags_list = config.settings
       .iter()
       .enumerate() /* yield also index (i) */
       .map(|(i, o)| {
@@ -982,8 +1076,10 @@ mod args {
     let flags_text = format!("Flags:\n{flags_list}");
 
     /* generate notes text */
-    let notes_body = doc_lines_get(&config)
+    let notes_body = config.messages.compose_notes()
+      .iter()
       .map(|l| line_break_and_indent(&l, 1, line_length_max, true))
+      .collect::<Vec<_>>()
       .join("\n\n");
     let notes_text = format!("Notes:\n{notes_body}");
 
@@ -1029,44 +1125,6 @@ mod args {
 
     if indent_first { format!("{whitespace_part}{body}") } else { body }
   }
-
-  /* - primary functions, remaining */
-
-  pub fn config_update(mut config: Config<'static>, cli_options: &[CLIOption], handle_remaining: &CLIArgHandler, args: Vec<String>) -> Config<'static> {
-
-    let args_count: usize = args.len();
-
-    /* for each flag in args, queue CLI option call with any values and tally */
-    let mut cli_options_queued = Vec::new();
-    let mut cli_options_count = 0;
-    if args_count > 0 {
-      for cli_option in cli_options {
-        for j in 0..args_count {
-          if ["--", &cli_option.word].concat() == args[j] || ["-", &cli_option.char].concat() == args[j] {
-            let strs_len = cli_option.strs.len();
-            let strs = args[(j + 1)..(j + strs_len + 1)].to_vec();
-            cli_options_queued.push((&cli_option.word, &cli_option.call, strs));
-            cli_options_count = cli_options_count + 1 + strs_len;
-          };
-        };
-      };
-    };
-
-    /* handle any remaining arguments */
-    let args_remaining = args[(cli_options_count)..].to_vec();
-    config = handle_remaining(config, args_remaining);
-
-    /* make any queued CLI option calls */
-    if !cli_options_queued.is_empty() {
-      for opt_queued in &cli_options_queued {
-        let (word, call, strs) = &opt_queued;
-        let value = call(&config, cli_options, strs.to_vec());
-        config.receipts.insert(String::from(*word), value);
-      }
-    }
-
-    config
-  }
 }
 
 /* test / UNIT TESTING */
@@ -1082,21 +1140,19 @@ mod test {
   use::std::collections::HashMap;
   use super::{
     DEFAULTS,
-    Config, ConfigRecsVal,
+    Config, ConfigReceiptVal,
     Script,
     Output, OutputText, OutputFile, OutputFilePath, OutputFileInit, OutputFileInitCode,
-    cli_options_get, doc_lines_get, inputs_parse
+    settings_new, messages_new, inputs_parse
   };
-
-  /* - SETTING, i.e. test directory path */
-
-  const PATH_TMP_DIR_TEST: &str = "./.test_temp";
 
   /* - test cases */
 
   /*   - end-to-end */
 
-  /*     - stdin read, CLI options */
+  /*     - stdin read, settings */
+
+  const PATH_TMP_DIR_TEST: &str = "./.test_temp";
 
   fn test_values_script_get(path_dir: &String, n: u8) -> (String, String, String, String, String) {
     let output_filename = format!("test_{n}.sh");
@@ -1247,10 +1303,10 @@ mod test {
     test_stdin_read_run(input_delimiter_2);
   }
 
-  /*     - CLI options */
+  /*     - settings */
 
   #[test]
-  fn cli_option_dest() {
+  fn setting_dest() {
 
     let [
       _, path_dir_scripts, path_source, _, _, _,
@@ -1297,7 +1353,7 @@ mod test {
   }
 
   #[test]
-  fn cli_option_only_incl_dest() {
+  fn setting_only_incl_dest() {
 
     let [
       _, path_dir_scripts, path_source, _, _, _,
@@ -1404,7 +1460,7 @@ mod test {
   }
 
   #[test]
-  fn cli_option_list() {
+  fn setting_list() {
 
     let [
       _, _, path_source, _, _, _,
@@ -1448,7 +1504,7 @@ mod test {
   }
 
   #[test]
-  fn cli_option_init() {
+  fn setting_init() {
 
     let [
       _, _, path_source, _, _, _,
@@ -1473,26 +1529,31 @@ mod test {
     let source = fs::read_to_string(&path_source)
       .unwrap_or_else(|_| panic!("reading from test source"));
 
+    let defaults = HashMap::from(DEFAULTS);
+    let settings = settings_new(&defaults);
+    let messages = messages_new(&defaults);
+
     let config_init = Config {
-      defaults: HashMap::from(DEFAULTS),
+      defaults,
+      settings,
+      messages,
       receipts: HashMap::new()
     };
-    let doc_lines = doc_lines_get(&config_init);
 
     test_tree_remove();
 
     /* assertions */
 
     assert!(output.contains(&path_source));
-    assert!(source.contains(&doc_lines[0]));
-    assert!(source.contains(&doc_lines[1]));
-    assert!(source.contains(&doc_lines[2]));
-    assert!(source.contains(&doc_lines[3]));
-    assert!(source.contains(&doc_lines[4]));
+    assert!(source.contains(config_init.messages.repository.get("file").unwrap()));
+    assert!(source.contains(config_init.messages.repository.get("line").unwrap()));
+    assert!(source.contains(config_init.messages.repository.get("main").unwrap()));
+    assert!(source.contains(config_init.messages.repository.get("plus").unwrap()));
+    assert!(source.contains(config_init.messages.repository.get("pipe").unwrap()));
   }
 
   #[test]
-  fn cli_option_push() {
+  fn setting_push() {
 
     let [
       _, _, path_source, path_script, _, _,
@@ -1547,7 +1608,7 @@ mod test {
   }
 
   #[test]
-  fn cli_option_edit() {
+  fn setting_edit() {
 
     let [
       _, _, path_source, _, _, _,
@@ -1603,7 +1664,7 @@ mod test {
   }
 
   #[test]
-  fn cli_option_version() {
+  fn setting_version() {
 
     let output_raw = process::Command::new("cargo")
       .args(Vec::from(["run", "--", "-v"]))
@@ -1621,7 +1682,7 @@ mod test {
   }
 
   #[test]
-  fn cli_option_help() {
+  fn setting_help() {
 
     let output_raw = process::Command::new("cargo")
       .args(Vec::from(["run", "--", "-h"]))
@@ -1639,12 +1700,19 @@ mod test {
       .split("Notes:")
       .collect::<Vec<_>>();
 
+    let defaults = HashMap::from(DEFAULTS);
+    let settings = settings_new(&defaults);
+    let messages = messages_new(&defaults);
+
     let config_init = Config {
-      defaults: HashMap::from(DEFAULTS),
+      defaults,
+      settings,
+      messages,
       receipts: HashMap::new()
     };
-    let cli_options = cli_options_get(&config_init);
-    let doc_lines_line = doc_lines_get(&config_init).join(" ");
+    let messages_notes_line = config_init.messages
+      .compose_notes()
+      .join(" ");
 
     /* title section */
 
@@ -1658,12 +1726,12 @@ mod test {
     let output_usage_line = output_parts_on_flags[0]
       .replace("\n", " ");
 
-    for cli_option in &cli_options {
+    for setting in &config_init.settings {
       let arg_set = format!(
         "--{}/-{} {}",
-        cli_option.word,
-        cli_option.char,
-        cli_option.strs.join(" ")
+        setting.word,
+        setting.char,
+        setting.strs.join(" ")
       );
       assert!(output_usage_line.contains(&arg_set.trim()));
     }
@@ -1676,13 +1744,13 @@ mod test {
       .filter(|c| ' ' != *c)
       .collect::<String>();
 
-    for cli_option in &cli_options {
+    for setting in &config_init.settings {
       let flag_line_condensed = format!(
         "-{},--{}{}{}",
-        cli_option.char,
-        cli_option.word,
-        cli_option.strs.join(""),
-        cli_option.desc.replace(" ", "")
+        setting.char,
+        setting.word,
+        setting.strs.join(""),
+        setting.desc.replace(" ", "")
       );
       assert!(output_flags_line_condensed.contains(&flag_line_condensed));
     }
@@ -1694,7 +1762,7 @@ mod test {
       .trim()
       .to_string();
 
-    assert_eq!(doc_lines_line, output_notes_line);
+    assert_eq!(messages_notes_line, output_notes_line);
   }
 
   /*   - unit */
@@ -1703,8 +1771,14 @@ mod test {
 
   fn test_values_inputs_parse_get() -> (Config<'static>, String, usize, String, OutputFilePath, OutputFileInit) {
 
+    let defaults = HashMap::from(DEFAULTS);
+    let settings = settings_new(&defaults);
+    let messages = messages_new(&defaults);
+
     let config_default = Config {
-      defaults: HashMap::from(DEFAULTS),
+      defaults,
+      settings,
+      messages,
       receipts: HashMap::new()
     };
 
@@ -1786,7 +1860,7 @@ mod test {
     let path = OutputFilePath { dir, stem, ext };
 
     match init { OutputFileInit::Code(ref mut c) => { c.args[2] = path.get() }, _ => () };
-    config_default.receipts.insert(String::from("dest"), ConfigRecsVal::Strs(Vec::from([String::from("dest")])));
+    config_default.receipts.insert(String::from("dest"), ConfigReceiptVal::Strs(Vec::from([String::from("dest")])));
 
     let expected = Output::File(OutputFile { data, code, path, init, n });
     let obtained = inputs_parse(&Script { n, line, body }, &config_default);
@@ -1801,7 +1875,7 @@ mod test {
 
     let line = String::from(" ext program --flag value\n");
 
-    config_default.receipts.insert(String::from("list"), ConfigRecsVal::Bool);
+    config_default.receipts.insert(String::from("list"), ConfigReceiptVal::Bool);
 
     let expected = Output::Text(OutputText::Stdout(String::from("1: ext program --flag value")));
     let obtained = inputs_parse(&Script { n, line, body }, &config_default);

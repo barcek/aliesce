@@ -1,37 +1,41 @@
 /*
-  STRUCTURE
+  MODULES
 
-    modules
+  MAIN / source processing
+  - imports
+  - configuration
+    - DEFAULTS
+    - settings
+    - messages
+  - MAIN
+  - data structures
+    - Source
+    - Script
+  - primary functions
+    - general
+    - argument applicators
+  - utility functions
 
-      main / SOURCE PROCESSING
-      - imports
-      - CONFIGURATION
-        - DEFAULTS, settings & messages
-        - MAIN
-      - data structures
-        - consolidation (Source, Script, Output etc.)
-      - utility functions, remaining
-      - primary functions, remaining
-        - general
-        - output handlers
-        - argument applicators
+  OUTPUT
+  - imports
+  - data structures
+    - Output + components
 
-      args / ARGUMENT HANDLING
-      - imports
-      - data structures
-        - configuration (Config etc.)
-      - argument applicators ('version', 'help')
-      - utility functions
-      - primary functions, remaining
+  CONFIG, incl. argument_handling
+  - imports
+  - data structures
+    - Config + components
+  - argument applicators ('version', 'help')
+  - utility functions
 
-      test / UNIT TESTING
-      - imports
-      - test cases
-        - end-to-end
-        - unit
+  TEST
+  - imports
+  - test cases
+    - end-to-end
+    - unit
 */
 
-/* main / SOURCE PROCESSING */
+/* MAIN / SOURCE PROCESSING */
 
 /* - imports */
 
@@ -45,7 +49,12 @@ use std::fs;
 use std::process;
 use std::collections::HashMap;
 
-use crate::args::{
+use crate::output::{
+  Output,
+  OutputText,
+  OutputFile
+};
+use crate::config::{
   Config,
   ConfigDefaults,
   ConfigSettings,
@@ -55,9 +64,7 @@ use crate::args::{
   ConfigReceiptVal
 };
 
-/* - CONFIGURATION */
-
-/*   - DEFAULTS, settings & messages */
+/* - configuration */
 
 static DEFAULTS: [(&str, &str); 10] = [
   ("path_src",     "src.txt"     ), /* source file path (incl. output stem) */
@@ -172,7 +179,7 @@ fn messages_new(defaults: &ConfigDefaults) -> ConfigMessages<'static> {
   }
 }
 
-/*   - MAIN */
+/* - MAIN */
 
 fn main() {
 
@@ -220,12 +227,10 @@ fn main() {
   /* print output if text or process if file */
   outputs
     .iter()
-    .for_each(|o| output_apply(o, &context))
+    .for_each(|o| o.apply(&context))
 }
 
 /* - data structures */
-
-/*   - consolidation */
 
 struct Source {
   preface: String,
@@ -251,248 +256,7 @@ impl Script {
   }
 }
 
-#[derive(Debug, PartialEq)]
-enum Output {
-  Text(OutputText),
-  File(OutputFile)
-}
-
-#[derive(Debug, PartialEq)]
-enum OutputText {
-  Stdout(String),
-  Stderr(String)
-}
-
-#[derive(Debug, PartialEq)]
-struct OutputFile {
-  data: Vec<String>,
-  code: String,
-  path: OutputFilePath,
-  init: OutputFileInit,
-  n:    usize
-}
-
-impl OutputFile {
-  fn new(data: Vec<String>, code: String, n: usize, config: &Config) -> OutputFile {
-
-    let Config { defaults, receipts: _, .. } = config;
-
-    /* set output path parts */
-
-    /* get output path parts - break first data item on '/' */
-    let mut parts_path = data.get(0).unwrap()
-      .split('/')
-      .collect::<Vec<_>>();
-    let path_dir = config.get("dest", "path_dir");
-
-    /* handle output directory identified by directory placeholder */
-    if defaults.get("plc_path_dir").unwrap() == &parts_path[0] { parts_path[0] = path_dir.as_str() };
-
-    /* get output filename parts - separate last output path part and break on '.' */
-    let parts_filename = parts_path
-      .split_off(parts_path.len() - 1)
-      .last()
-      .unwrap()
-      .split('.')
-      .collect::<Vec<_>>();
-    let p_f_len = parts_filename.len();
-
-    /* set as dir either remaining output path parts recombined or directory name,
-           as stem either all but last output filename part or src stem, and
-           as ext last output filename part */
-    let dir = if !parts_path.is_empty() { parts_path.join("/") } else { path_dir.to_string() };
-    let stem = if p_f_len > 1 {
-      parts_filename[..(p_f_len - 1)]
-        .join(".")
-    } else {
-      config.get("path_src", "path_src")
-        .split('.')
-        .nth(0)
-        .unwrap()
-        .to_string()
-    };
-    let ext = parts_filename
-      .iter()
-      .last()
-      .unwrap()
-      .to_string();
-
-    let path = OutputFilePath{ dir, stem, ext };
-
-    /* set output init parts */
-
-    /* handle file run precluded */
-    if data.len() == 1 {
-      let init = OutputFileInit::Text(
-        OutputText::Stderr(
-          format!("Not running file no. {n} (no values)")
-        )
-      );
-      return OutputFile { data, code, path, init, n };
-    }
-    if data.get(1).unwrap() == defaults.get("sig_stop").unwrap() {
-      let init = OutputFileInit::Text(
-        OutputText::Stderr(
-          format!("Not running file no. {n} ({} applied)", defaults.get("sig_stop").unwrap())
-        )
-      );
-      return OutputFile { data, code, path, init, n };
-    }
-
-    /* set as plcs any uses of output path placeholder and note presence as indicator of composite command */
-    let mut parts_placeholder = defaults.get("plc_path_all").unwrap().split("{}");
-    let plc_head = parts_placeholder.next().unwrap();
-    let plc_tail = parts_placeholder.next().unwrap();
-    let plc_full = Vec::from([plc_head, plc_tail]).join("");
-
-    let plcs = data
-      .iter()
-      .skip(1)
-      .map(|item| {
-        /* handle request for current script output path */
-        if item.contains(&plc_full) { return (0, plc_full.to_owned()) };
-        let head_i = if let Some(i) = item.find(plc_head) { i as i8 } else { -1 };
-        let tail_i = if let Some(i) = item.find(plc_tail) { i as i8 } else { -1 };
-        /* handle request for another script output path */
-        if -1 != head_i && -1 != tail_i && head_i < tail_i {
-           let s = item
-             .chars()
-             .skip(head_i as usize)
-             .take((tail_i - head_i + 1) as usize)
-             .collect::<String>();
-           let i = s
-             .chars()
-             .skip(plc_head.len())
-             .take(s.len() - plc_full.len())
-             .collect::<String>()
-             .parse::<i8>()
-             .unwrap();
-           return (i, s)
-        };
-        /* handle no request - value to be filtered out */
-        (-1, String::new())
-      })
-      .filter(|item| -1 != item.0)
-      .collect::<Vec<_>>();
-
-    let has_placeholder = !plcs.is_empty();
-
-    /* set as prog either tag line second item or default, and
-           as args either Vec containing remaining items plus combined path or default flag plus remaining items joined */
-    let prog = String::from(if has_placeholder { *defaults.get("cmd_prog").unwrap() } else { data.get(1).unwrap() });
-    let args = if has_placeholder {
-      Vec::from([
-        defaults.get("cmd_flag").unwrap().to_string(),
-        data
-          .iter()
-          .skip(1)
-          .map(|item| item.to_owned())
-          .collect::<Vec<_>>()
-          .join(" ")
-      ])
-    } else {
-      [
-        data
-          .iter()
-          .skip(2)
-          .map(|arg| arg.to_owned())
-          .collect::<Vec<_>>(),
-        Vec::from([path.get()])
-      ]
-        .concat()
-    };
-
-    let init = OutputFileInit::Code(OutputFileInitCode { prog, args, plcs });
-
-    OutputFile { data, code, path, init, n }
-  }
-}
-
-#[derive(Debug, PartialEq)]
-struct OutputFilePath {
-  dir:  String,
-  stem: String,
-  ext:  String
-}
-
-impl OutputFilePath {
-  fn get(&self) -> String {
-    format!("{}/{}.{}", &self.dir, &self.stem, &self.ext)
-  }
-}
-
-#[derive(Debug, PartialEq)]
-enum OutputFileInit {
-  Text(OutputText),
-  Code(OutputFileInitCode)
-}
-
-#[derive(Debug, PartialEq)]
-struct OutputFileInitCode {
-  prog: String,
-  args: Vec<String>,
-  plcs: Vec<(i8, String)>
-}
-
-/* - utility functions, remaining */
-
-fn tag_head_add(line: &str, config: &Config) -> String {
-  let tag_head = config.defaults.get("tag_head").unwrap();
-  if line.len() >= 3 && line[..3] == **tag_head { line.to_string() } else { format!("{tag_head} {}", line.trim()) }
-}
-
-fn script_push(config: &Config, strs: Vec<String>) {
-
-  let script_filename = &strs[1];
-
-  /* handle read */
-
-  let script = fs::read_to_string(script_filename)
-    .unwrap_or_else(|e| error_handle((
-      &format!("Not parsing script file '{script_filename}'"),
-      Some("read"),
-      Some(e)
-    )));
-  let tag_line = tag_head_add(&strs[0], &config);
-  let script_plus_tag_line = format!("\n{tag_line}\n\n{script}");
-
-  /* handle write */
-
-  let summary_base = format!(
-    "tag line '{tag_line}' and content of script file '{script_filename}' to source file '{}'",
-    config.get("path_src", "path_src")
-  );
-  let summary_failure = format!("Not appending {summary_base}");
-  let summary_success = format!("Appended {summary_base}");
-
-  fs::OpenOptions::new()
-    .append(true)
-    .open(config.get("path_src", "path_src"))
-    .unwrap_or_else(|e| error_handle((
-      &summary_failure,
-      Some("open"),
-      Some(e)
-    )))
-    .write_all(&script_plus_tag_line.into_bytes())
-    .unwrap_or_else(|e| error_handle((
-      &summary_failure,
-      Some("write"),
-      Some(e)
-    )));
-
-  println!("{summary_success}");
-}
-
-fn error_handle(strs: (&String, Option<&str>, Option<io::Error>)) -> ! {
-  match strs {
-    (s, Some(a), Some(e)) => eprintln!("{s} ({a} error: '{e}')"),
-    (s, None,    None   ) => eprintln!("{s}"),
-    _                     => eprintln!("Failed (unknown error)")
-  }
-  process::exit(1);
-}
-
-/* - primary functions, remaining */
+/* - primary functions */
 
 /*   - general */
 
@@ -711,72 +475,6 @@ fn context_get(outputs: &Vec<Output>) -> HashMap<usize, String> {
     })
 }
 
-/*   - output handlers */
-
-fn output_apply(output: &Output, context: &HashMap<usize, String>) {
-  match output {
-    Output::Text(e) => {
-      match e {
-        OutputText::Stdout(s) => {  println!("{s}"); },
-        OutputText::Stderr(s) => { eprintln!("{s}"); }
-      }
-    },
-    Output::File(s) => { output_save(&s); output_exec(&s, &context); },
-  };
-}
-
-fn output_save(output: &OutputFile) {
-
-  let OutputFile { data: _, code, path, init: _, n: _ } = output;
-  let dir = &path.dir;
-  let path = path.get();
-
-  /* add directory if none */
-  fs::create_dir_all(&dir).unwrap_or_else(|_| panic!("create directory '{dir}'"));
-  /* write script to file */
-  fs::write(&path, code).unwrap_or_else(|_| panic!("write script to '{path}'"));
-}
-
-fn output_exec(output: &OutputFile, context: &HashMap<usize, String>) {
-
-  let OutputFile { data: _, code: _, path: _, init, n } = output;
-
-  match init {
-
-    /* print reason file run precluded */
-    OutputFileInit::Text(e) => {
-      match e {
-        OutputText::Stdout(s) => {  println!("{s}"); },
-        OutputText::Stderr(s) => { eprintln!("{s}"); }
-      }
-    },
-    /* run script from file */
-    OutputFileInit::Code(c) => {
-      let OutputFileInitCode { prog, args, plcs } = c;
-
-      let args_full = if plcs.is_empty() {
-        args.to_owned()
-      } else {
-        let mut cmd = if 0 == plcs.len() { String::new() } else { args[1].to_owned() };
-        plcs
-          .iter()
-          .for_each(|plc| {
-            let path = if 0 == plc.0 { context.get(n).unwrap() } else { context.get(&(plc.0 as usize)).unwrap() };
-            cmd = cmd.replace(plc.1.as_str(), path.as_str()).to_owned();
-          });
-        Vec::from([args[0].to_owned(), cmd])
-      };
-
-      process::Command::new(&prog)
-        .args(args_full)
-        .spawn()
-        .unwrap_or_else(|_| panic!("run file with '{prog}'"))
-        .wait_with_output()
-        .unwrap_or_else(|_| panic!("await output from '{prog}'"));
-    }
-  }
-}
-
 /*   - argument applicators */
 
 fn setting_dest_apply(_: &Config, strs: Vec<String>) -> ConfigReceiptVal {
@@ -874,9 +572,336 @@ fn args_remaining_src_apply(_: Vec<String>) -> ConfigReceipts {
   ConfigReceipts::new()
 }
 
-/* args / ARGUMENT HANDLING */
+/* - utility functions */
 
-mod args {
+fn tag_head_add(line: &str, config: &Config) -> String {
+  let tag_head = config.defaults.get("tag_head").unwrap();
+  if line.len() >= 3 && line[..3] == **tag_head { line.to_string() } else { format!("{tag_head} {}", line.trim()) }
+}
+
+fn script_push(config: &Config, strs: Vec<String>) {
+
+  let script_filename = &strs[1];
+
+  /* handle read */
+
+  let script = fs::read_to_string(script_filename)
+    .unwrap_or_else(|e| error_handle((
+      &format!("Not parsing script file '{script_filename}'"),
+      Some("read"),
+      Some(e)
+    )));
+  let tag_line = tag_head_add(&strs[0], &config);
+  let script_plus_tag_line = format!("\n{tag_line}\n\n{script}");
+
+  /* handle write */
+
+  let summary_base = format!(
+    "tag line '{tag_line}' and content of script file '{script_filename}' to source file '{}'",
+    config.get("path_src", "path_src")
+  );
+  let summary_failure = format!("Not appending {summary_base}");
+  let summary_success = format!("Appended {summary_base}");
+
+  fs::OpenOptions::new()
+    .append(true)
+    .open(config.get("path_src", "path_src"))
+    .unwrap_or_else(|e| error_handle((
+      &summary_failure,
+      Some("open"),
+      Some(e)
+    )))
+    .write_all(&script_plus_tag_line.into_bytes())
+    .unwrap_or_else(|e| error_handle((
+      &summary_failure,
+      Some("write"),
+      Some(e)
+    )));
+
+  println!("{summary_success}");
+}
+
+fn error_handle(strs: (&String, Option<&str>, Option<io::Error>)) -> ! {
+  match strs {
+    (s, Some(a), Some(e)) => eprintln!("{s} ({a} error: '{e}')"),
+    (s, None,    None   ) => eprintln!("{s}"),
+    _                     => eprintln!("Failed (unknown error)")
+  }
+  process::exit(1);
+}
+
+/* OUTPUT */
+
+mod output {
+
+  /* - imports */
+
+  use std::fs;
+  use std::process;
+  use std::collections::HashMap;
+
+  use crate::config::{Config};
+
+  /* - data structures */
+
+  #[derive(Debug, PartialEq)]
+  pub enum Output {
+    Text(OutputText),
+    File(OutputFile)
+  }
+
+  impl Output {
+
+    pub fn apply(&self, context: &HashMap<usize, String>) {
+      match self {
+        Output::Text(e) => {
+          match e {
+            OutputText::Stdout(s) => {  println!("{s}"); },
+            OutputText::Stderr(s) => { eprintln!("{s}"); }
+          }
+        },
+        Output::File(s) => {
+          s.save();
+          s.exec(&context);
+        }
+      };
+    }
+  }
+
+  #[derive(Debug, PartialEq)]
+  pub enum OutputText {
+    Stdout(String),
+    Stderr(String)
+  }
+
+  #[derive(Debug, PartialEq)]
+  pub struct OutputFile {
+    pub data: Vec<String>,
+    pub code: String,
+    pub path: OutputFilePath,
+    pub init: OutputFileInit,
+    pub n:    usize
+  }
+
+  impl OutputFile {
+
+    pub fn new(data: Vec<String>, code: String, n: usize, config: &Config) -> OutputFile {
+
+      let Config { defaults, receipts: _, .. } = config;
+
+      /* set output path parts */
+
+      /* get output path parts - break first data item on '/' */
+      let mut parts_path = data.get(0).unwrap()
+        .split('/')
+        .collect::<Vec<_>>();
+      let path_dir = config.get("dest", "path_dir");
+
+      /* handle output directory identified by directory placeholder */
+      if defaults.get("plc_path_dir").unwrap() == &parts_path[0] { parts_path[0] = path_dir.as_str() };
+
+      /* get output filename parts - separate last output path part and break on '.' */
+      let parts_filename = parts_path
+        .split_off(parts_path.len() - 1)
+        .last()
+        .unwrap()
+        .split('.')
+        .collect::<Vec<_>>();
+      let p_f_len = parts_filename.len();
+
+      /* set as dir either remaining output path parts recombined or directory name,
+             as stem either all but last output filename part or src stem, and
+             as ext last output filename part */
+      let dir = if !parts_path.is_empty() { parts_path.join("/") } else { path_dir.to_string() };
+      let stem = if p_f_len > 1 {
+        parts_filename[..(p_f_len - 1)]
+          .join(".")
+      } else {
+        config.get("path_src", "path_src")
+          .split('.')
+          .nth(0)
+          .unwrap()
+          .to_string()
+      };
+      let ext = parts_filename
+        .iter()
+        .last()
+        .unwrap()
+        .to_string();
+
+      let path = OutputFilePath{ dir, stem, ext };
+
+      /* set output init parts */
+
+      /* handle file run precluded */
+      if data.len() == 1 {
+        let init = OutputFileInit::Text(
+          OutputText::Stderr(
+            format!("Not running file no. {n} (no values)")
+          )
+        );
+        return OutputFile { data, code, path, init, n };
+      }
+      if data.get(1).unwrap() == defaults.get("sig_stop").unwrap() {
+        let init = OutputFileInit::Text(
+          OutputText::Stderr(
+            format!("Not running file no. {n} ({} applied)", defaults.get("sig_stop").unwrap())
+          )
+        );
+        return OutputFile { data, code, path, init, n };
+      }
+
+      /* set as plcs any uses of output path placeholder and note presence as indicator of composite command */
+      let mut parts_placeholder = defaults.get("plc_path_all").unwrap().split("{}");
+      let plc_head = parts_placeholder.next().unwrap();
+      let plc_tail = parts_placeholder.next().unwrap();
+      let plc_full = Vec::from([plc_head, plc_tail]).join("");
+
+      let plcs = data
+        .iter()
+        .skip(1)
+        .map(|item| {
+          /* handle request for current script output path */
+          if item.contains(&plc_full) { return (0, plc_full.to_owned()) };
+          let head_i = if let Some(i) = item.find(plc_head) { i as i8 } else { -1 };
+          let tail_i = if let Some(i) = item.find(plc_tail) { i as i8 } else { -1 };
+          /* handle request for another script output path */
+          if -1 != head_i && -1 != tail_i && head_i < tail_i {
+             let s = item
+               .chars()
+               .skip(head_i as usize)
+               .take((tail_i - head_i + 1) as usize)
+               .collect::<String>();
+             let i = s
+               .chars()
+               .skip(plc_head.len())
+               .take(s.len() - plc_full.len())
+               .collect::<String>()
+               .parse::<i8>()
+               .unwrap();
+             return (i, s)
+          };
+          /* handle no request - value to be filtered out */
+          (-1, String::new())
+        })
+        .filter(|item| -1 != item.0)
+        .collect::<Vec<_>>();
+
+      let has_placeholder = !plcs.is_empty();
+
+      /* set as prog either tag line second item or default, and
+             as args either Vec containing remaining items plus combined path or default flag plus remaining items joined */
+      let prog = String::from(if has_placeholder { *defaults.get("cmd_prog").unwrap() } else { data.get(1).unwrap() });
+      let args = if has_placeholder {
+        Vec::from([
+          defaults.get("cmd_flag").unwrap().to_string(),
+          data
+            .iter()
+            .skip(1)
+            .map(|item| item.to_owned())
+            .collect::<Vec<_>>()
+            .join(" ")
+        ])
+      } else {
+        [
+          data
+            .iter()
+            .skip(2)
+            .map(|arg| arg.to_owned())
+            .collect::<Vec<_>>(),
+          Vec::from([path.get()])
+        ]
+          .concat()
+      };
+
+      let init = OutputFileInit::Code(OutputFileInitCode { prog, args, plcs });
+
+      OutputFile { data, code, path, init, n }
+    }
+
+    fn save(&self) {
+
+      let OutputFile { data: _, code, path, init: _, n: _ } = self;
+      let dir = &path.dir;
+      let path = path.get();
+
+      /* add directory if none */
+      fs::create_dir_all(&dir).unwrap_or_else(|_| panic!("create directory '{dir}'"));
+      /* write script to file */
+      fs::write(&path, code).unwrap_or_else(|_| panic!("write script to '{path}'"));
+    }
+
+    fn exec(&self, context: &HashMap<usize, String>) {
+
+      let OutputFile { data: _, code: _, path: _, init, n } = self;
+
+      match init {
+
+        /* print reason file run precluded */
+        OutputFileInit::Text(e) => {
+          match e {
+            OutputText::Stdout(s) => {  println!("{s}"); },
+            OutputText::Stderr(s) => { eprintln!("{s}"); }
+          }
+        },
+        /* run script from file */
+        OutputFileInit::Code(c) => {
+          let OutputFileInitCode { prog, args, plcs } = c;
+
+          let args_full = if plcs.is_empty() {
+            args.to_owned()
+          } else {
+            let mut cmd = if 0 == plcs.len() { String::new() } else { args[1].to_owned() };
+            plcs
+              .iter()
+              .for_each(|plc| {
+                let path = if 0 == plc.0 { context.get(n).unwrap() } else { context.get(&(plc.0 as usize)).unwrap() };
+                cmd = cmd.replace(plc.1.as_str(), path.as_str()).to_owned();
+              });
+            Vec::from([args[0].to_owned(), cmd])
+          };
+
+          process::Command::new(&prog)
+            .args(args_full)
+            .spawn()
+            .unwrap_or_else(|_| panic!("run file with '{prog}'"))
+            .wait_with_output()
+            .unwrap_or_else(|_| panic!("await output from '{prog}'"));
+        }
+      }
+    }
+  }
+
+  #[derive(Debug, PartialEq)]
+  pub struct OutputFilePath {
+    pub dir:  String,
+    pub stem: String,
+    pub ext:  String
+  }
+
+  impl OutputFilePath {
+    pub fn get(&self) -> String {
+      format!("{}/{}.{}", &self.dir, &self.stem, &self.ext)
+    }
+  }
+
+  #[derive(Debug, PartialEq)]
+  pub enum OutputFileInit {
+    Text(OutputText),
+    Code(OutputFileInitCode)
+  }
+
+  #[derive(Debug, PartialEq)]
+  pub struct OutputFileInitCode {
+    pub prog: String,
+    pub args: Vec<String>,
+    pub plcs: Vec<(i8, String)>
+  }
+}
+
+/* CONFIG, incl. argument_handling */
+
+mod config {
 
   /* - imports */
 
@@ -884,8 +909,6 @@ mod args {
   use std::collections::HashMap;
 
   /* - data structures */
-
-  /*   - configuration */
 
   pub struct Config<'a> {
     pub defaults: ConfigDefaults<'a>,
@@ -1127,7 +1150,7 @@ mod args {
   }
 }
 
-/* test / UNIT TESTING */
+/* TEST */
 
 #[cfg(test)]
 mod test {
@@ -1138,12 +1161,25 @@ mod test {
   use::std::fs;
   use::std::process;
   use::std::collections::HashMap;
+
   use super::{
     DEFAULTS,
-    Config, ConfigReceiptVal,
     Script,
-    Output, OutputText, OutputFile, OutputFilePath, OutputFileInit, OutputFileInitCode,
-    settings_new, messages_new, inputs_parse
+    settings_new,
+    messages_new,
+    inputs_parse
+  };
+  use crate::output::{
+    Output,
+    OutputText,
+    OutputFile,
+    OutputFilePath,
+    OutputFileInit,
+    OutputFileInitCode
+  };
+  use crate::config::{
+    Config,
+    ConfigReceiptVal
   };
 
   /* - test cases */

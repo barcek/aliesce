@@ -81,14 +81,13 @@ static DEFAULTS: [(&str, &str); 10] = [
 
 fn settings_new(defaults: &ConfigDefaults) -> ConfigSettings {
 
-  Vec::from([
+  let path_src = defaults.expect("path_src");
+  let path_dir = defaults.expect("path_dir");
 
+  Vec::from([
     ConfigSetting::new(
       "list", "l", &[],
-      &format!(
-        "print for each script in SOURCE (def. '{}') its number and tag line content, without saving or running",
-        defaults.get("path_src").expect("get default value 'path_src'")
-      ),
+      &format!("print for each script in SOURCE (def. '{path_src}') its number and tag line content, without saving or running"),
       &setting_list_apply
     ),
     ConfigSetting::new(
@@ -98,26 +97,17 @@ fn settings_new(defaults: &ConfigDefaults) -> ConfigSettings {
     ),
     ConfigSetting::new(
       "dest", "d", &["DIRNAME"],
-      &format!(
-        "set the default output dirname ('{}') to DIRNAME",
-        defaults.get("path_dir").expect("get default value 'path_dir'")
-      ),
+      &format!("set the default output dirname ('{path_dir}') to DIRNAME"),
       &setting_dest_apply
     ),
     ConfigSetting::new(
       "init", "i", &[],
-      &format!(
-        "create the source file SOURCE (def. '{}') then exit",
-        defaults.get("path_src").expect("get default value 'path_src'")
-      ),
+      &format!("create the source file SOURCE (def. '{path_src}') then exit"),
       &setting_init_apply
     ),
     ConfigSetting::new(
       "push", "p", &["LINE", "PATH"],
-      &format!(
-        "append to SOURCE (def. '{}') LINE, adding the tag head if none, followed by the content at PATH then exit",
-        defaults.get("path_src").expect("get default value 'path_src'")
-      ),
+      &format!("append to SOURCE (def. '{path_src}') LINE, adding the tag head if none, followed by the content at PATH then exit"),
       &setting_push_apply
     ),
     ConfigSetting::new(
@@ -132,44 +122,38 @@ fn settings_new(defaults: &ConfigDefaults) -> ConfigSettings {
 
 fn messages_new(defaults: &ConfigDefaults) -> ConfigMessages<'static> {
 
+  let path_src     = defaults.expect("path_src");
+  let path_dir     = defaults.expect("path_dir");
+  let tag_head     = defaults.expect("tag_head");
+  let tag_tail     = defaults.expect("tag_tail");
+  let sig_stop     = defaults.expect("sig_stop");
+  let plc_path_dir = defaults.expect("plc_path_dir");
+  let plc_path_all = defaults.expect("plc_path_all");
+  let cmd_prog     = defaults.expect("cmd_prog");
+  let cmd_flag     = defaults.expect("cmd_flag");
+
+  let plc_path_all_empty = plc_path_all.replace("{}", "");
+  let plc_path_all_n     = plc_path_all.replace("{}", "n");
+
   let repository = [
     (
-      "file", format!(
-        "The default source path is '{}'. Each script in the file is preceded by a tag line begun with the tag head ('{}') and an optional label and tail ('{}'):",
-        defaults.get("path_src").expect("get default value 'path_src'"),
-        defaults.get("tag_head").expect("get default value 'tag_head'"),
-        defaults.get("tag_tail").expect("get default value 'tag_tail'")
-      )
+      "file",
+      format!("The default source path is '{path_src}'. Each script in the file is preceded by a tag line begun with the tag head ('{tag_head}') and an optional label and tail ('{tag_tail}'):")
     ),
     (
-      "line", format!(
-        "{}[ label {}] <OUTPUT EXTENSION / PATH: [[[.../]dirname/]stem.]ext> <COMMAND>",
-        defaults.get("tag_head").expect("get default value 'tag_head'"),
-        defaults.get("tag_tail").expect("get default value 'tag_tail'")
-      )
+      "line",
+      format!("{tag_head}[ label {tag_tail}] <OUTPUT EXTENSION / PATH: [[[.../]dirname/]stem.]ext> <COMMAND>")
     ),
     (
-      "main", format!(
-        "Each script is saved with the default output directory ('{}'), source file stem and OUTPUT EXTENSION, or a PATH overriding stem and/or directory, then the COMMAND is run with the save path appended. The '{}' placeholder can be used in the COMMAND to override path position and have the COMMAND passed to '{} {}'; where a script no. is included ('{}') the save path of that script is applied.",
-        defaults.get("path_dir").expect("get default value 'path_dir'"),
-        defaults.get("plc_path_all").expect("get default value 'plc_path_all'").replace("{}", ""),
-        defaults.get("cmd_prog").expect("get default value 'cmd_prog'"),
-        defaults.get("cmd_flag").expect("get default value 'cmd_flag'"),
-        defaults.get("plc_path_all").expect("get default value 'plc_path_all'").replace("{}", "n")
-      )
+      "main",
+      format!("Each script is saved with the default output directory ('{path_dir}'), source file stem and OUTPUT EXTENSION, or a PATH overriding stem and/or directory, then the COMMAND is run with the save path appended. The '{plc_path_all_empty}' placeholder can be used in the COMMAND to override path position and have the COMMAND passed to '{cmd_prog} {cmd_flag}'; where a script no. is included ('{plc_path_all_n}') the save path of that script is applied.")
     ),
     (
-      "plus", format!(
-        "The '{}' signal can be used before the EXTENSION etc. to avoid both the save and run stages, or before the COMMAND to avoid run only. The '{}' placeholder can be used in a full PATH to denote the default or overridden output directory name.",
-        defaults.get("sig_stop").expect("get default value 'sig_stop'"),
-        defaults.get("plc_path_dir").expect("get default value 'plc_path_dir'")
-      )
+      "plus",
+      format!("The '{sig_stop}' signal can be used before the EXTENSION etc. to avoid both the save and run stages, or before the COMMAND to avoid run only. The '{plc_path_dir}' placeholder can be used in a full PATH to denote the default or overridden output directory name.")
     ),
     (
-      "pipe", format!(
-        "One or more file paths can be piped to aliesce to append the content at each to the source as a script, auto-preceded by a tag line with a base '{}', then exit.",
-        defaults.get("sig_stop").expect("get default value 'sig_stop'")
-      )
+      "pipe", format!("One or more file paths can be piped to aliesce to append the content at each to the source as a script, auto-preceded by a tag line with a base '{sig_stop}', then exit.")
     )
   ];
 
@@ -185,7 +169,7 @@ fn main() {
 
   /* INITIAL SETUP */
 
-  let defaults = HashMap::from(DEFAULTS);
+  let defaults = ConfigDefaults::from(DEFAULTS);
   let settings = settings_new(&defaults);
   let messages = messages_new(&defaults);
 
@@ -304,7 +288,7 @@ fn if_paths_on_stdin_push_then_exit(config: &Config) {
   if !paths.is_empty() {
     for path in paths {
       let strs = Vec::from([
-        config.defaults.get("sig_stop").unwrap().to_string(),
+        config.defaults.expect("sig_stop").to_string(),
         path
       ]);
       script_push(&config, strs);
@@ -339,7 +323,7 @@ fn if_change_in_args_make_then_exit(source: &Source, config: &Config) {
     let text = format!("{}{source_scripts}", source.preface);
 
     /* write source to file, with backup to then removal of temporary directory */
-    let path_src      = config.get("path_src", "path_src");
+    let path_src      = config.get_or("path_src", "path_src");
     let path_src_inst = Path::new(&path_src);
     let path_src_stem = path_src_inst.file_stem().unwrap().to_str().unwrap();
     let path_src_ext  = path_src_inst.extension().unwrap().to_str().unwrap();
@@ -349,7 +333,7 @@ fn if_change_in_args_make_then_exit(source: &Source, config: &Config) {
       .unwrap()
       .as_secs();
 
-    let path_tmp_dir = config.defaults.get("path_tmp_dir").unwrap();
+    let path_tmp_dir = config.defaults.expect("path_tmp_dir");
     let path_tmp = format!("{path_tmp_dir}/{path_src_stem}_{secs}.{path_src_ext}");
 
     fs::create_dir_all(&path_tmp_dir)
@@ -368,26 +352,24 @@ fn if_change_in_args_make_then_exit(source: &Source, config: &Config) {
 
 fn source_get(config: &Config) -> Source {
 
-  let doc_line_file = config.messages.repository.get("file")
-    .expect("get message 'file' from configuration");
-  let doc_line_line = config.messages.repository.get("line")
-    .expect("get message 'line' from configuration");
+  let doc_line_file = config.messages.expect("file");
+  let doc_line_line = config.messages.expect("line");
 
   /* load source file content as string or exit early */
-  let sections = fs::read_to_string(&config.get("path_src", "path_src"))
+  let sections = fs::read_to_string(&config.get_or("path_src", "path_src"))
     .unwrap_or_else(|e| error_handle((
-      &format!("Not parsing source file '{}'", config.get("path_src", "path_src")),
+      &format!("Not parsing source file '{}'", config.get_or("path_src", "path_src")),
       Some("read"),
       Some(e)
     )))
     /* set any init option text with tag head to placeholder */
     .lines()
-    .map(|l| if doc_line_file == &l { "plc_doc_line_file" } else { l })
-    .map(|l| if doc_line_line == &l { "plc_doc_line_line" } else { l })
+    .map(|l| if doc_line_file == l { "plc_doc_line_file" } else { l })
+    .map(|l| if doc_line_line == l { "plc_doc_line_line" } else { l })
     .collect::<Vec<_>>()
     .join("\n")
     /* get args section plus each source string (script with tag line minus tag head) numbered */
-    .split(config.defaults.get("tag_head").unwrap())
+    .split(config.defaults.expect("tag_head"))
     .map(|part| part.to_owned())
     .enumerate()
     /* remove any shebang line */
@@ -416,12 +398,12 @@ fn inputs_parse(script: &Script, config: &Config) -> Output {
   let Config { defaults, receipts, .. } = config;
 
   /* get label and data from tag line */
-  let line_sections = match line.find(defaults.get("tag_tail").unwrap()) {
+  let line_sections = match line.find(defaults.expect("tag_tail")) {
     Some(i) => line.split_at(i + 1),
     None    => ("", line.as_str())
   };
   let line_label = line_sections.0
-    .split(defaults.get("tag_tail").unwrap())
+    .split(defaults.expect("tag_tail"))
     .nth(0)
     .unwrap(); /* untrimmed */
   let line_data  = line_sections.1.trim();
@@ -444,8 +426,8 @@ fn inputs_parse(script: &Script, config: &Config) -> Output {
     let text = format!("No tag data found for script no. {n}");
     return Output::Text(OutputText::Stderr(text));
   }
-  if data.get(0).unwrap() == defaults.get("sig_stop").unwrap() {
-    let text = format!("Bypassing script no. {n} ({} applied)", defaults.get("sig_stop").unwrap());
+  if data.get(0).unwrap() == defaults.expect("sig_stop") {
+    let text = format!("Bypassing script no. {n} ({} applied)", defaults.expect("sig_stop"));
     return Output::Text(OutputText::Stderr(text));
   }
 
@@ -517,19 +499,18 @@ fn setting_push_apply(config: &Config, strs: Vec<String>) -> ConfigReceiptVal {
 
 fn setting_init_apply(config: &Config, _: Vec<String>) -> ConfigReceiptVal {
 
-  let src = &config.get("path_src", "path_src");
-  let summary_failure_write = format!("Not creating template source file at '{src}'");
+  let src = &config.get_or("path_src", "path_src");
+  let summary_failure = format!("Not creating template source file at '{src}'");
 
   /* exit early if source file exists */
   if fs::metadata(src).is_ok() {
     error_handle((
-      &format!("{summary_failure_write} (path exists)"),
+      &format!("{summary_failure} (path exists)"),
       None,
       None
     ))
   };
 
-  let summary_expect_get = "get message from configuration for template source file";
   let content = format!("\
       <any arguments to aliesce (run 'aliesce --help' for options)>\n\n\
       Notes on source file format:\n\n\
@@ -539,16 +520,16 @@ fn setting_init_apply(config: &Config, _: Vec<String>) -> ConfigReceiptVal {
       Tag line and script section:\n\n\
       {}\n\n<script>\n\
     ",
-    config.messages.repository.get("file").expect(&format!("{summary_expect_get} ('file')")),
-    config.messages.repository.get("main").expect(&format!("{summary_expect_get} ('main')")),
-    config.messages.repository.get("plus").expect(&format!("{summary_expect_get} ('plus')")),
-    config.messages.repository.get("pipe").expect(&format!("{summary_expect_get} ('pipe')")),
-    config.messages.repository.get("line").expect(&format!("{summary_expect_get} ('line')"))
+    config.messages.expect("file"),
+    config.messages.expect("main"),
+    config.messages.expect("plus"),
+    config.messages.expect("pipe"),
+    config.messages.expect("line")
   );
 
   fs::write(src, content)
     .unwrap_or_else(|e| error_handle((
-      &summary_failure_write,
+      &summary_failure,
       Some("write"),
       Some(e)
     )));
@@ -575,8 +556,8 @@ fn args_remaining_src_apply(_: Vec<String>) -> ConfigReceipts {
 /* - utility functions */
 
 fn tag_head_add(line: &str, config: &Config) -> String {
-  let tag_head = config.defaults.get("tag_head").unwrap();
-  if line.len() >= 3 && line[..3] == **tag_head { line.to_string() } else { format!("{tag_head} {}", line.trim()) }
+  let tag_head = config.defaults.expect("tag_head");
+  if line.len() >= 3 && line[..3] == *tag_head { line.to_string() } else { format!("{tag_head} {}", line.trim()) }
 }
 
 fn script_push(config: &Config, strs: Vec<String>) {
@@ -598,14 +579,14 @@ fn script_push(config: &Config, strs: Vec<String>) {
 
   let summary_base = format!(
     "tag line '{tag_line}' and content of script file '{script_filename}' to source file '{}'",
-    config.get("path_src", "path_src")
+    config.get_or("path_src", "path_src")
   );
   let summary_failure = format!("Not appending {summary_base}");
   let summary_success = format!("Appended {summary_base}");
 
   fs::OpenOptions::new()
     .append(true)
-    .open(config.get("path_src", "path_src"))
+    .open(config.get_or("path_src", "path_src"))
     .unwrap_or_else(|e| error_handle((
       &summary_failure,
       Some("open"),
@@ -695,10 +676,10 @@ mod output {
       let mut parts_path = data.get(0).unwrap()
         .split('/')
         .collect::<Vec<_>>();
-      let path_dir = config.get("dest", "path_dir");
+      let path_dir = config.get_or("dest", "path_dir");
 
       /* handle output directory identified by directory placeholder */
-      if defaults.get("plc_path_dir").unwrap() == &parts_path[0] { parts_path[0] = path_dir.as_str() };
+      if defaults.expect("plc_path_dir") == parts_path[0] { parts_path[0] = path_dir.as_str() };
 
       /* get output filename parts - separate last output path part and break on '.' */
       let parts_filename = parts_path
@@ -717,7 +698,7 @@ mod output {
         parts_filename[..(p_f_len - 1)]
           .join(".")
       } else {
-        config.get("path_src", "path_src")
+        config.get_or("path_src", "path_src")
           .split('.')
           .nth(0)
           .unwrap()
@@ -742,17 +723,17 @@ mod output {
         );
         return OutputFile { data, code, path, init, n };
       }
-      if data.get(1).unwrap() == defaults.get("sig_stop").unwrap() {
+      if data.get(1).unwrap() == defaults.expect("sig_stop") {
         let init = OutputFileInit::Text(
           OutputText::Stderr(
-            format!("Not running file no. {n} ({} applied)", defaults.get("sig_stop").unwrap())
+            format!("Not running file no. {n} ({} applied)", defaults.expect("sig_stop"))
           )
         );
         return OutputFile { data, code, path, init, n };
       }
 
       /* set as plcs any uses of output path placeholder and note presence as indicator of composite command */
-      let mut parts_placeholder = defaults.get("plc_path_all").unwrap().split("{}");
+      let mut parts_placeholder = config.defaults.expect("plc_path_all").split("{}");
       let plc_head = parts_placeholder.next().unwrap();
       let plc_tail = parts_placeholder.next().unwrap();
       let plc_full = Vec::from([plc_head, plc_tail]).join("");
@@ -791,10 +772,10 @@ mod output {
 
       /* set as prog either tag line second item or default, and
              as args either Vec containing remaining items plus combined path or default flag plus remaining items joined */
-      let prog = String::from(if has_placeholder { *defaults.get("cmd_prog").unwrap() } else { data.get(1).unwrap() });
+      let prog = String::from(if has_placeholder { defaults.expect("cmd_prog") } else { data.get(1).unwrap() });
       let args = if has_placeholder {
         Vec::from([
-          defaults.get("cmd_flag").unwrap().to_string(),
+          defaults.expect("cmd_flag").to_string(),
           data
             .iter()
             .skip(1)
@@ -954,7 +935,7 @@ mod config {
       config
     }
 
-    pub fn get(&self, key_receipt: &str, key_default: &str) -> String {
+    pub fn get_or(&self, key_receipt: &str, key_default: &str) -> String {
       if self.receipts.contains_key(key_receipt) {
         if let ConfigReceiptVal::Strs(val_strs) = self.receipts.get(key_receipt).unwrap() {
           return val_strs
@@ -963,15 +944,32 @@ mod config {
             .to_string();
         }
       }
-      String::from(
-        *self.defaults
-          .get(key_default)
-          .expect(&format!("get default value '{key_default}' from configuration"))
-      )
+      String::from(self.defaults.expect(key_default))
     }
   }
 
-  pub type ConfigDefaults<'a> = HashMap<&'a str, &'a str>;
+  pub struct ConfigDefaults<'a> {
+    pub repository: HashMap<&'a str, &'a str>
+  }
+
+  impl<'a> ConfigDefaults<'a> {
+
+    pub fn from<T>(defaults: T) -> Self
+    where
+      T: IntoIterator<Item=(&'a str, &'a str)>
+    {
+      Self {
+        repository: HashMap::from_iter(defaults)
+      }
+    }
+
+    pub fn expect(&self, key: &str) -> &str {
+      self.repository
+        .get(key)
+        .expect(&format!("get default value '{key}'"))
+    }
+  }
+
   pub type ConfigSettings = Vec<ConfigSetting>;
   pub type ConfigReceipts = HashMap<String, ConfigReceiptVal>;
 
@@ -988,6 +986,12 @@ mod config {
   }
 
   impl ConfigMessages<'_> {
+
+    pub fn expect(&self, key: &str) -> &str {
+      self.repository
+        .get(key)
+        .expect(&format!("get message '{key}'"))
+    }
 
     pub fn compose_notes(&self) -> Vec<String> {
       self.keys_notes
@@ -1179,6 +1183,7 @@ mod test {
   };
   use crate::config::{
     Config,
+    ConfigDefaults,
     ConfigReceiptVal
   };
 
@@ -1565,7 +1570,7 @@ mod test {
     let source = fs::read_to_string(&path_source)
       .unwrap_or_else(|_| panic!("reading from test source"));
 
-    let defaults = HashMap::from(DEFAULTS);
+    let defaults = ConfigDefaults::from(DEFAULTS);
     let settings = settings_new(&defaults);
     let messages = messages_new(&defaults);
 
@@ -1581,11 +1586,11 @@ mod test {
     /* assertions */
 
     assert!(output.contains(&path_source));
-    assert!(source.contains(config_init.messages.repository.get("file").unwrap()));
-    assert!(source.contains(config_init.messages.repository.get("line").unwrap()));
-    assert!(source.contains(config_init.messages.repository.get("main").unwrap()));
-    assert!(source.contains(config_init.messages.repository.get("plus").unwrap()));
-    assert!(source.contains(config_init.messages.repository.get("pipe").unwrap()));
+    assert!(source.contains(config_init.messages.expect("file")));
+    assert!(source.contains(config_init.messages.expect("line")));
+    assert!(source.contains(config_init.messages.expect("main")));
+    assert!(source.contains(config_init.messages.expect("plus")));
+    assert!(source.contains(config_init.messages.expect("pipe")));
   }
 
   #[test]
@@ -1736,7 +1741,7 @@ mod test {
       .split("Notes:")
       .collect::<Vec<_>>();
 
-    let defaults = HashMap::from(DEFAULTS);
+    let defaults = ConfigDefaults::from(DEFAULTS);
     let settings = settings_new(&defaults);
     let messages = messages_new(&defaults);
 
@@ -1807,7 +1812,7 @@ mod test {
 
   fn test_values_inputs_parse_get() -> (Config<'static>, String, usize, String, OutputFilePath, OutputFileInit) {
 
-    let defaults = HashMap::from(DEFAULTS);
+    let defaults = ConfigDefaults::from(DEFAULTS);
     let settings = settings_new(&defaults);
     let messages = messages_new(&defaults);
 
@@ -1821,8 +1826,8 @@ mod test {
     /* base test script values */
 
     let output_path = OutputFilePath {
-      dir:  String::from(*config_default.defaults.get("path_dir").unwrap()),
-      stem: String::from( config_default.defaults.get("path_src").unwrap().split(".").nth(0).unwrap()),
+      dir:  String::from(config_default.defaults.expect("path_dir")),
+      stem: String::from(config_default.defaults.expect("path_src").split(".").nth(0).unwrap()),
       ext:  String::from("ext")
     };
 
@@ -1891,7 +1896,7 @@ mod test {
     ]);
 
     let dir  = String::from("dest");
-    let stem = String::from(config_default.defaults.get("path_src").unwrap().split(".").nth(0).unwrap());
+    let stem = String::from(config_default.defaults.expect("path_src").split(".").nth(0).unwrap());
     let ext  = String::from("ext");
     let path = OutputFilePath { dir, stem, ext };
 
@@ -1932,7 +1937,7 @@ mod test {
       String::from("value")
     ]);
 
-    let dir  = String::from(*config_default.defaults.get("path_dir").unwrap());
+    let dir  = String::from(config_default.defaults.expect("path_dir"));
     let stem = String::from("script");
     let ext  = String::from("ext");
     let path = OutputFilePath { dir, stem, ext };
@@ -1958,7 +1963,7 @@ mod test {
       String::from("value")
     ]);
 
-    let dir  = String::from(*config_default.defaults.get("path_dir").unwrap());
+    let dir  = String::from(config_default.defaults.expect("path_dir"));
     let stem = String::from("script.suffix1.suffix2");
     let ext  = String::from("ext");
     let path = OutputFilePath { dir, stem, ext };
@@ -2039,9 +2044,9 @@ mod test {
       String::from("program_2")
     ]);
 
-    let prog = String::from(*config_default.defaults.get("cmd_prog").unwrap());
+    let prog = String::from(config_default.defaults.expect("cmd_prog"));
     let args = Vec::from([
-      String::from(*config_default.defaults.get("cmd_flag").unwrap()),
+      String::from(config_default.defaults.expect("cmd_flag")),
       String::from("program_1 --flag value >< | program_2")
     ]);
     let plcs = Vec::from([(0, String::from("><"))]);
